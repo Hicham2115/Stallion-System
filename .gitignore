@@ -51,6 +51,9 @@ frontend/.vite/
 *.swp
 *.swo
 
+# Local-only docs
+README.md
+
 # ---- Runtime uploads (if used) ----
 uploads/
 backend/node_modules/
