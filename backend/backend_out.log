@@ -1,0 +1,7 @@
+﻿
+­ƒÉÄ Stallion API running on port 5000
+   Environment: development
+   Health: http://localhost:5000/health
+
+[currency] Rates loaded from DB
+[currency] Exchange rates synced from API

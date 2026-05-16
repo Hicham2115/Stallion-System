@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brew services *)",
+      "Bash(/opt/homebrew/opt/postgresql@16/bin/pg_isready)",
+      "Bash(/opt/homebrew/opt/postgresql@17/bin/pg_isready)",
+      "Bash(/opt/homebrew/bin/pg_isready)"
+    ]
+  }
+}
