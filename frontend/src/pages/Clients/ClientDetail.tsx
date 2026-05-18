@@ -5,6 +5,7 @@ import api from '@/lib/api';
 import { Client, ClientCost, User } from '@/types';
 import { formatCurrency, formatDate, getServiceLabel, getStatusColor, cn } from '@/lib/utils';
 import ClientModal from './ClientModal';
+import DateSelector from '@/components/DateSelector';
 
 type Tab = 'overview' | 'costs' | 'closers';
 
@@ -285,7 +286,7 @@ export default function ClientDetail() {
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-[1fr_160px_160px_auto] gap-3">
+            <div className="grid sm:grid-cols-[1fr_160px_190px_auto] gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Cost Name</label>
                 <input
@@ -308,12 +309,10 @@ export default function ClientDetail() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Date</label>
-                <input
-                  className="input"
-                  type="date"
+                <DateSelector
+                  label="Date"
                   value={costForm.date}
-                  onChange={e => setCostForm(f => ({ ...f, date: e.target.value }))}
+                  onChange={date => setCostForm(f => ({ ...f, date }))}
                 />
               </div>
               <div className="flex items-end">

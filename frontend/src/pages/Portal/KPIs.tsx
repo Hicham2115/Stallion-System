@@ -20,6 +20,7 @@ import {
   BarChart2,
 } from "lucide-react";
 import { portalApi } from "@/context/PortalAuthContext";
+import { usePortalCurrency } from "@/context/PortalCurrencyContext";
 import { KpiData } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +61,7 @@ function KpiCard({
   );
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label, fmtMoney }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-[#0d1528] border border-slate-700/50 rounded-xl px-3 py-2.5 text-xs shadow-xl">
@@ -74,7 +75,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           <span className="text-slate-300">{p.name}:</span>
           <span className="text-white font-semibold">
             {p.dataKey === "spend"
-              ? `$${Number(p.value).toLocaleString()}`
+              ? fmtMoney(Number(p.value))
               : p.dataKey.toLowerCase().includes("rate")
                 ? `${Number(p.value).toFixed(1)}%`
               : p.value}
@@ -86,6 +87,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function KPIsPage() {
+  const { fmt } = usePortalCurrency();
   const [datePreset, setDatePreset] = useState("last_7d");
   const [data, setData] = useState<KpiData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,8 +101,6 @@ export default function KPIsPage() {
   }, [datePreset]);
 
   const s = data?.summary;
-  const fmt = (n: number) =>
-    `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   const fmtK = (n: number) =>
     n >= 1000 ? `${(n / 1000).toFixed(1)}K` : n.toString();
 
@@ -172,7 +172,7 @@ export default function KPIsPage() {
               icon={Target}
               label="Leads"
               value={`${s?.leads ?? 0}`}
-              sub={`$${(s?.costPerLead ?? 0).toFixed(2)} CPL`}
+              sub={`${fmt(s?.costPerLead ?? 0)} CPL`}
               color="bg-green-500/10 text-green-400"
             />
             <KpiCard
@@ -199,7 +199,7 @@ export default function KPIsPage() {
             <KpiCard
               icon={DollarSign}
               label="CPM"
-              value={`$${(s?.cpm ?? 0).toFixed(2)}`}
+              value={fmt(s?.cpm ?? 0)}
               color="bg-slate-500/10 text-slate-400"
             />
             <KpiCard
@@ -235,9 +235,9 @@ export default function KPIsPage() {
                 />
                 <YAxis
                   tick={{ fill: "#64748b", fontSize: 11 }}
-                  tickFormatter={(v) => `$${v}`}
+                  tickFormatter={(v) => fmt(Number(v))}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip fmtMoney={fmt} />} />
                 <Area
                   type="monotone"
                   dataKey="spend"
@@ -274,7 +274,7 @@ export default function KPIsPage() {
                   tickFormatter={(v) => `${v}%`}
                   domain={[0, "auto"]}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip fmtMoney={fmt} />} />
                 <Bar
                   dataKey="conversionRate"
                   name="Conv. %"

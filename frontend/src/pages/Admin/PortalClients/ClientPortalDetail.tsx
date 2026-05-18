@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import DateSelector from "@/components/DateSelector";
 import {
   Client,
   ProjectUpdate,
@@ -728,13 +729,11 @@ export default function ClientPortalDetail() {
                     setCostForm((f) => ({ ...f, amount: e.target.value }))
                   }
                 />
-                <InputField
+                <DateSelector
                   label="Date"
-                  type="date"
                   value={costForm.date}
-                  onChange={(e) =>
-                    setCostForm((f) => ({ ...f, date: e.target.value }))
-                  }
+                  onChange={(date) => setCostForm((f) => ({ ...f, date }))}
+                  dark
                 />
               </div>
 

@@ -75,6 +75,29 @@ const SOURCE_COLORS = [
   "#94a3b8",
 ];
 
+function toIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function monthOptions() {
+  const fmt = new Intl.DateTimeFormat("en-US", { month: "short" });
+  return Array.from({ length: 8 }, (_, index) => {
+    const date = new Date();
+    date.setMonth(date.getMonth() - index, 1);
+    const start = new Date(date.getFullYear(), date.getMonth(), 1);
+    const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    return {
+      key: `${date.getFullYear()}-${date.getMonth()}`,
+      label: `${fmt.format(date)} ${date.getFullYear()}`,
+      from: toIsoDate(start),
+      to: toIsoDate(end),
+    };
+  });
+}
+
 interface Props {
   onNavigate?: (tab: string) => void;
   analyticsMode?: boolean;
@@ -84,6 +107,7 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
   const { fmt } = useCrmCurrency();
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -98,12 +122,21 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
 
   useEffect(() => {
     setLoading(true);
-    const params = selectedClient ? `?clientId=${selectedClient}` : "";
+    const params = new URLSearchParams();
+    if (selectedClient) params.set("clientId", selectedClient);
+    if (selectedMonth) {
+      const month = monthOptions().find((m) => m.key === selectedMonth);
+      if (month) {
+        params.set("datePreset", "custom");
+        params.set("from", month.from);
+        params.set("to", month.to);
+      }
+    }
     api
-      .get<AnalyticsData>(`/crm/analytics${params}`)
+      .get<AnalyticsData>(`/crm/analytics?${params.toString()}`)
       .then((r) => setData(r.data))
       .finally(() => setLoading(false));
-  }, [selectedClient]);
+  }, [selectedClient, selectedMonth]);
 
   const s = data?.summary;
 
@@ -181,7 +214,7 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
           bg: "bg-orange-500/10",
         },
         {
-          label: "Product Costs",
+          label: "Costs",
           value: fmt(s.totalProductCost),
           icon: Package,
           color: "text-slate-400",
@@ -193,7 +226,7 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-white">
             {analyticsMode ? "Profit Analytics" : "CRM Dashboard"}
@@ -204,18 +237,35 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
               : "Business performance overview"}
           </p>
         </div>
-        <select
-          className="select w-full sm:w-56"
-          value={selectedClient}
-          onChange={(e) => setSelectedClient(e.target.value)}
-        >
-          <option value="">All Clients</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <div className="w-full xl:w-auto grid sm:grid-cols-2 gap-3">
+          <select
+            className="select w-full sm:w-56"
+            value={selectedClient}
+            onChange={(e) => setSelectedClient(e.target.value)}
+          >
+            <option value="">All Clients</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="select w-full sm:w-44"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+          >
+            <option value="">All Months</option>
+            {monthOptions().map((month) => (
+              <option
+                key={month.key}
+                value={month.key}
+              >
+                {month.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {loading ? (

@@ -48,8 +48,8 @@ function getPresetRange(datePreset: string) {
   return { start, end };
 }
 
-async function getClientKpiSpend(clientId: string, datePreset: string) {
-  const linkedCostSpend = await getClientCostsSpend(clientId, datePreset);
+async function getClientKpiSpend(clientId: string, datePreset: string, from?: string, to?: string) {
+  const linkedCostSpend = await getClientCostsSpend(clientId, datePreset, from, to);
   if (linkedCostSpend > 0) return linkedCostSpend;
 
   const config = await prisma.clientKpiConfig.findUnique({ where: { clientId } });
@@ -69,12 +69,21 @@ async function getClientKpiSpend(clientId: string, datePreset: string) {
   return 0;
 }
 
-async function getClientCostsSpend(clientId: string | undefined, datePreset: string) {
-  const range = datePreset === "all_time" ? null : getPresetRange(datePreset);
+async function getClientCostsSpend(clientId: string | undefined, datePreset: string, from?: string, to?: string) {
+  const customRange = from || to
+    ? {
+        start: from ? new Date(from) : undefined,
+        end: to ? new Date(to) : undefined,
+      }
+    : null;
+  if (customRange?.start) customRange.start.setHours(0, 0, 0, 0);
+  if (customRange?.end) customRange.end.setHours(23, 59, 59, 999);
+  const presetRange = datePreset === "all_time" ? null : getPresetRange(datePreset);
+  const range = customRange || presetRange;
   const costs = await prisma.clientCost.aggregate({
     where: {
       ...(clientId ? { clientId } : {}),
-      ...(range ? { date: { gte: range.start, lte: range.end } } : {}),
+      ...(range ? { date: { ...(range.start ? { gte: range.start } : {}), ...(range.end ? { lte: range.end } : {}) } } : {}),
     },
     _sum: { amount: true },
   });
@@ -960,9 +969,11 @@ router.get(
     const linkedCostSpend = await getClientCostsSpend(
       clientId ? (clientId as string) : undefined,
       (datePreset as string) || "all_time",
+      from as string | undefined,
+      to as string | undefined,
     );
     const totalAdSpend = clientId
-      ? await getClientKpiSpend(clientId as string, (datePreset as string) || "all_time")
+      ? await getClientKpiSpend(clientId as string, (datePreset as string) || "all_time", from as string | undefined, to as string | undefined)
       : linkedCostSpend || orderAdSpend;
     const totalProductCost = orders.reduce(
       (s: number, o: any) => s + o.productCost,

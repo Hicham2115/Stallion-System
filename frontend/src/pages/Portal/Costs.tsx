@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Plus, Receipt } from "lucide-react";
 import { portalApi } from "@/context/PortalAuthContext";
 import { ClientCost } from "@/types";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { usePortalCurrency } from "@/context/PortalCurrencyContext";
+import DateSelector from "@/components/DateSelector";
 
 function InputField({
   label,
@@ -23,7 +24,7 @@ function InputField({
 }
 
 export default function PortalCostsPage() {
-  const { currency } = usePortalCurrency();
+  const { currency, fmt } = usePortalCurrency();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [costs, setCosts] = useState<ClientCost[]>([]);
@@ -96,11 +97,11 @@ export default function PortalCostsPage() {
             value={form.amount}
             onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
           />
-          <InputField
+          <DateSelector
             label="Date"
-            type="date"
             value={form.date}
-            onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+            onChange={(date) => setForm((f) => ({ ...f, date }))}
+            dark
           />
         </div>
 
@@ -145,7 +146,7 @@ export default function PortalCostsPage() {
                   </div>
                 </div>
                 <div className="text-sm font-bold text-white whitespace-nowrap">
-                  {formatCurrency(Number(c.amount), currency)}
+                  {fmt(Number(c.amount))}
                 </div>
               </div>
             ))

@@ -14,6 +14,7 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { portalApi } from "@/context/PortalAuthContext";
+import { usePortalCurrency } from "@/context/PortalCurrencyContext";
 import { cn } from "@/lib/utils";
 import {
   AreaChart,
@@ -86,10 +87,6 @@ interface Stats {
   topProducts: { name: string; revenue: number; count: number }[];
 }
 
-function fmt(n: number) {
-  return n.toLocaleString("en-MA", { maximumFractionDigits: 0 }) + " MAD";
-}
-
 const STATUS_COLORS: Record<string, string> = {
   NEW: "bg-blue-500/15 text-blue-400",
   PENDING_CONFIRMATION: "bg-amber-500/15 text-amber-400",
@@ -125,6 +122,7 @@ const CHART_STYLE = {
 };
 
 export default function ClientCrm() {
+  const { fmt } = usePortalCurrency();
   const [stats, setStats] = useState<Stats | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
