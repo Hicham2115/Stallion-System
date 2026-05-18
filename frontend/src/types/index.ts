@@ -123,6 +123,15 @@ export interface CloserStat {
   confirmedOrders: number;
   shippedOrders: number;
   deliveredOrders: number;
+  shippedFromConfirmedOrders: number;
+  commissionRuleCount: number;
+  commissionRuleType: "FIXED_PER_ORDER" | "PERCENTAGE" | "MIXED" | null;
+  commissionRuleValue: number | null;
+  commissionTotal: number;
+  agencyCommissionTotal: number;
+  closerCommissionTotal: number;
+  commissionPaid: number;
+  commissionUnpaid: number;
   conversionRate: number;
   totalEarnings: number;
 }

@@ -28,6 +28,68 @@ import {
 
 const RANK_COLORS = ["#f59e0b", "#94a3b8", "#92400e", "#6366f1", "#10b981"];
 
+function CommissionBreakdown({
+  closer,
+  fmt,
+}: {
+  closer: Pick<
+    CloserStat,
+    | "commissionTotal"
+    | "agencyCommissionTotal"
+    | "closerCommissionTotal"
+    | "commissionPaid"
+    | "commissionUnpaid"
+  >;
+  fmt: (amount: number) => string;
+}) {
+  const total = closer.commissionTotal ?? 0;
+  const agency = closer.agencyCommissionTotal ?? 0;
+  const closerTotal = closer.closerCommissionTotal ?? 0;
+  const paid = closer.commissionPaid ?? 0;
+  const unpaid = closer.commissionUnpaid ?? 0;
+
+  if (total <= 0 && closerTotal <= 0 && paid <= 0 && unpaid <= 0)
+    return <span>—</span>;
+
+  const rowCls = "flex items-center justify-between gap-3";
+  const labelCls = "text-[11px] text-slate-500";
+  const valueCls =
+    "text-[11px] font-semibold text-slate-700 dark:text-slate-200";
+
+  return (
+    <div className="min-w-[180px] rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-2">
+      <div className={rowCls}>
+        <span className={labelCls}>Total Commission</span>
+        <span className={valueCls}>{fmt(total)}</span>
+      </div>
+      <div className={rowCls}>
+        <span className={labelCls}>Agency</span>
+        <span className={valueCls + " text-emerald-600 dark:text-emerald-400"}>
+          {fmt(agency)}
+        </span>
+      </div>
+      <div className={rowCls}>
+        <span className={labelCls}>Closer</span>
+        <span className={valueCls + " text-amber-600 dark:text-amber-400"}>
+          {fmt(closerTotal)}
+        </span>
+      </div>
+      <div className={rowCls}>
+        <span className={labelCls}>Paid</span>
+        <span className={valueCls + " text-emerald-600 dark:text-emerald-400"}>
+          {fmt(paid)}
+        </span>
+      </div>
+      <div className={rowCls}>
+        <span className={labelCls}>Unpaid</span>
+        <span className={valueCls + " text-slate-500 dark:text-slate-400"}>
+          {fmt(unpaid)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function Closers() {
   const { fmt } = useCrmCurrency();
   const [view, setView] = useState<"performance" | "team">("performance");
@@ -54,7 +116,13 @@ export default function Closers() {
     setLoading(true);
     try {
       const { data } = await api.get<CloserStat[]>("/crm/closers");
-      setClosers(data.sort((a, b) => b.confirmedOrders - a.confirmedOrders));
+      setClosers(
+        data.sort(
+          (a, b) =>
+            (b.shippedFromConfirmedOrders ?? 0) -
+            (a.shippedFromConfirmedOrders ?? 0),
+        ),
+      );
     } finally {
       setLoading(false);
     }
@@ -176,7 +244,7 @@ export default function Closers() {
   const teamClosers = closers.filter((c) => c.isCloser);
   const chartData = teamClosers.slice(0, 10).map((c) => ({
     name: c.name.split(" ")[0],
-    confirmed: c.confirmedOrders,
+    confirmed: c.shippedFromConfirmedOrders ?? 0,
     earnings: c.totalEarnings,
     rate: c.conversionRate,
   }));
@@ -243,19 +311,24 @@ export default function Closers() {
           </div>
         ) : (
           <>
-            {/* Leaderboard top 3 */}
+            {/* Closer cards */}
             {teamClosers.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {teamClosers.slice(0, 3).map((c, i) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {teamClosers.map((c, i) => (
                   <div
                     key={c.id}
                     className={cn(
-                      "card p-5 text-center border-2 relative overflow-hidden",
+                      "card p-5 text-center relative overflow-hidden",
+                      i <= 2
+                        ? "border-2"
+                        : "border border-slate-200 dark:border-slate-700",
                       i === 0
                         ? "border-amber-400"
                         : i === 1
                           ? "border-slate-400"
-                          : "border-orange-700/50",
+                          : i === 2
+                            ? "border-orange-700/50"
+                            : null,
                     )}
                   >
                     <div
@@ -265,7 +338,9 @@ export default function Closers() {
                           ? "bg-amber-500"
                           : i === 1
                             ? "bg-slate-500"
-                            : "bg-orange-800",
+                            : i === 2
+                              ? "bg-orange-800"
+                              : "bg-slate-600",
                       )}
                     >
                       #{i + 1}
@@ -290,7 +365,7 @@ export default function Closers() {
                     <div className="grid grid-cols-2 gap-2 text-center">
                       <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
                         <div className="font-bold text-amber-600 dark:text-amber-400">
-                          {c.confirmedOrders}
+                          {c.shippedFromConfirmedOrders ?? 0}
                         </div>
                         <div className="text-xs text-slate-500">Confirmed</div>
                       </div>
@@ -303,6 +378,9 @@ export default function Closers() {
                     </div>
                     <div className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
                       {fmt(c.totalEarnings)} earned
+                    </div>
+                    <div className="mt-2 flex justify-center">
+                      <CommissionBreakdown closer={c} fmt={fmt} />
                     </div>
                   </div>
                 ))}
@@ -361,7 +439,7 @@ export default function Closers() {
                         "Total Orders",
                         "Confirmed",
                         "Shipped",
-                        "Conversion Rate",
+                        "Shipping Rate",
                         "Earnings",
                       ].map((h) => (
                         <th
@@ -424,7 +502,7 @@ export default function Closers() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
                             <CheckCircle className="w-3.5 h-3.5" />{" "}
-                            {c.confirmedOrders}
+                            {c.shippedFromConfirmedOrders ?? 0}
                           </div>
                         </td>
                         <td className="px-4 py-3">

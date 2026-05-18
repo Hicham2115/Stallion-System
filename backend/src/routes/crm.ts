@@ -48,6 +48,13 @@ function getPresetRange(datePreset: string) {
   return { start, end };
 }
 
+function toIsoDate(d: Date) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 async function getClientKpiSpend(
   clientId: string,
   datePreset: string,
@@ -67,7 +74,24 @@ async function getClientKpiSpend(
   });
   if (config?.metaToken && config?.metaAdAccountId) {
     try {
-      const url = `https://graph.facebook.com/v19.0/act_${config.metaAdAccountId}/insights?fields=spend&date_preset=${datePreset}&level=account&access_token=${config.metaToken}`;
+      const qs = new URLSearchParams({
+        fields: "spend",
+        level: "account",
+        access_token: config.metaToken,
+      });
+      if (from || to) {
+        const since = from || to;
+        const until = to || from;
+        if (since) qs.set("time_range[since]", since);
+        if (until) qs.set("time_range[until]", until);
+      } else {
+        // Meta does not support date_preset=all_time, so use a sane default
+        qs.set(
+          "date_preset",
+          datePreset && datePreset !== "all_time" ? datePreset : "last_90d",
+        );
+      }
+      const url = `https://graph.facebook.com/v19.0/act_${config.metaAdAccountId}/insights?${qs.toString()}`;
       const metaRes = await fetch(url);
       const metaData: any = await metaRes.json();
       if (!metaData.error) {
@@ -99,7 +123,9 @@ async function getClientCostsSpend(
   const presetRange =
     datePreset === "all_time" ? null : getPresetRange(datePreset);
   const range = customRange || presetRange;
-  const costs = await prisma.clientCost.aggregate({
+  const clientCostModel = (prisma as any).clientCost;
+  if (!clientCostModel?.aggregate) return 0;
+  const costs = await clientCostModel.aggregate({
     where: {
       ...(clientId ? { clientId } : {}),
       ...(range
@@ -502,6 +528,10 @@ router.get(
 router.get(
   "/closers",
   h(async (req, res) => {
+    // Commission split used for the Closers commission breakdown.
+    // Example (from sheet): Total = 2760, Agency = 2070 (75%), Closer = 690 (25%).
+    const CLOSER_COMMISSION_SHARE = 0.25;
+
     const { teamOnly } = req.query;
     const users =
       teamOnly === "true"
@@ -531,34 +561,138 @@ router.get(
         WHERE active = true AND suspended = false ORDER BY name ASC`;
     const stats = await Promise.all(
       users.map(async (u) => {
-        const [total, confirmed, shipped, delivered, earnings] =
-          await Promise.all([
-            (prisma as any).crmOrder.count({ where: { closerId: u.id } }),
-            (prisma as any).crmOrder.count({
-              where: { closerId: u.id, status: "CONFIRMED" },
-            }),
-            (prisma as any).crmOrder.count({
-              where: { closerId: u.id, status: "SHIPPED" },
-            }),
-            (prisma as any).crmOrder.count({
-              where: { closerId: u.id, status: "DELIVERED" },
-            }),
-            (prisma as any).closerCommissionRecord.aggregate({
-              where: { closerId: u.id },
-              _sum: { amount: true },
-            }),
-          ]);
+        type CommissionRuleSummary = {
+          commissionRuleCount: number;
+          commissionRuleType: "FIXED_PER_ORDER" | "PERCENTAGE" | "MIXED" | null;
+          commissionRuleValue: number | null;
+        };
+
+        const summarizeRules = (
+          rules: {
+            type: string;
+            fixedAmount: number | null;
+            percentage: number | null;
+          }[],
+        ): CommissionRuleSummary => {
+          if (!rules || rules.length === 0) {
+            return {
+              commissionRuleCount: 0,
+              commissionRuleType: null,
+              commissionRuleValue: null,
+            };
+          }
+
+          const normalized = rules.map((r) => {
+            if (r.type === "FIXED_PER_ORDER") {
+              return {
+                type: "FIXED_PER_ORDER" as const,
+                value: r.fixedAmount ?? 0,
+              };
+            }
+            return { type: "PERCENTAGE" as const, value: r.percentage ?? 0 };
+          });
+
+          const first = normalized[0];
+          const allSameType = normalized.every((x) => x.type === first.type);
+          const allSameValue = normalized.every(
+            (x) => x.type === first.type && x.value === first.value,
+          );
+
+          if (allSameType && allSameValue) {
+            return {
+              commissionRuleCount: rules.length,
+              commissionRuleType: first.type,
+              commissionRuleValue: first.value,
+            };
+          }
+
+          return {
+            commissionRuleCount: rules.length,
+            commissionRuleType: "MIXED",
+            commissionRuleValue: null,
+          };
+        };
+
+        const [
+          total,
+          confirmed,
+          shipped,
+          delivered,
+          confirmedEver,
+          shippedFromConfirmed,
+          earnings,
+          paidCommission,
+          unpaidCommission,
+          commissionRules,
+        ] = await Promise.all([
+          (prisma as any).crmOrder.count({ where: { closerId: u.id } }),
+          (prisma as any).crmOrder.count({
+            where: { closerId: u.id, status: "CONFIRMED" },
+          }),
+          (prisma as any).crmOrder.count({
+            where: { closerId: u.id, status: "SHIPPED" },
+          }),
+          (prisma as any).crmOrder.count({
+            where: { closerId: u.id, status: "DELIVERED" },
+          }),
+          (prisma as any).crmOrder.count({
+            where: { closerId: u.id, confirmedAt: { not: null } },
+          }),
+          (prisma as any).crmOrder.count({
+            where: {
+              closerId: u.id,
+              confirmedAt: { not: null },
+              status: { in: ["SHIPPED", "DELIVERED"] },
+            },
+          }),
+          (prisma as any).closerCommissionRecord.aggregate({
+            where: { closerId: u.id },
+            _sum: { amount: true },
+          }),
+          (prisma as any).closerCommissionRecord.aggregate({
+            where: { closerId: u.id, paid: true },
+            _sum: { amount: true },
+          }),
+          (prisma as any).closerCommissionRecord.aggregate({
+            where: { closerId: u.id, paid: false },
+            _sum: { amount: true },
+          }),
+          (prisma as any).commissionRule.findMany({
+            where: { closerId: u.id, active: true },
+            select: { type: true, fixedAmount: true, percentage: true },
+          }),
+        ]);
+
+        const commissionSummary = summarizeRules(commissionRules);
+
+        const closerCommissionTotal = earnings._sum.amount ?? 0;
+        const commissionPaid = paidCommission._sum.amount ?? 0;
+        const commissionUnpaid = unpaidCommission._sum.amount ?? 0;
+
+        const commissionTotal =
+          CLOSER_COMMISSION_SHARE > 0
+            ? closerCommissionTotal / CLOSER_COMMISSION_SHARE
+            : closerCommissionTotal;
+        const agencyCommissionTotal = commissionTotal - closerCommissionTotal;
+
         return {
           ...u,
           totalOrders: total,
           confirmedOrders: confirmed,
           shippedOrders: shipped,
           deliveredOrders: delivered,
+          shippedFromConfirmedOrders: shippedFromConfirmed,
+          ...commissionSummary,
           conversionRate:
-            total > 0
-              ? Math.round(((confirmed + shipped + delivered) / total) * 100)
+            confirmedEver > 0
+              ? Math.round((shippedFromConfirmed / confirmedEver) * 100)
               : 0,
-          totalEarnings: earnings._sum.amount ?? 0,
+          totalEarnings: closerCommissionTotal,
+          commissionTotal,
+          agencyCommissionTotal,
+          closerCommissionTotal,
+          commissionPaid,
+          commissionUnpaid,
         };
       }),
     );
@@ -975,16 +1109,50 @@ router.get(
     const { clientId, from, to, datePreset } = req.query;
     const where: Record<string, unknown> = {};
     if (clientId) where.clientId = clientId;
-    if (from || to) {
-      const dateFilter: Record<string, unknown> = {};
-      if (from) dateFilter.gte = new Date(from as string);
-      if (to) dateFilter.lte = new Date(to as string);
-      where.createdAt = dateFilter;
-    }
+
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    // Default to a meaningful range to power the "trend" charts.
+    // If a custom range is provided, use it as-is.
+    const hasCustomRange = Boolean(from || to);
+    const effectiveFromDate = (() => {
+      if (from) {
+        const d = new Date(from as string);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+      if (hasCustomRange && !from) return undefined;
+      // default: start of month 5 months ago
+      return new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    })();
+    const effectiveToDate = (() => {
+      if (to) {
+        const d = new Date(to as string);
+        d.setHours(23, 59, 59, 999);
+        return d;
+      }
+      if (hasCustomRange && !to) return undefined;
+      // default: today
+      return today;
+    })();
+
+    const dateFilter: Record<string, unknown> = {};
+    if (effectiveFromDate) dateFilter.gte = effectiveFromDate;
+    if (effectiveToDate) dateFilter.lte = effectiveToDate;
+    if (Object.keys(dateFilter).length > 0) where.createdAt = dateFilter;
+
+    const effectiveFrom = effectiveFromDate
+      ? toIsoDate(effectiveFromDate)
+      : undefined;
+    const effectiveTo = effectiveToDate
+      ? toIsoDate(effectiveToDate)
+      : undefined;
 
     const [orders, commissions] = await Promise.all([
       (prisma as any).crmOrder.findMany({
         where,
+        orderBy: { createdAt: "asc" },
         select: {
           orderAmount: true,
           productCost: true,
@@ -1013,16 +1181,16 @@ router.get(
     const orderAdSpend = orders.reduce((s: number, o: any) => s + o.adCost, 0);
     const linkedCostSpend = await getClientCostsSpend(
       clientId ? (clientId as string) : undefined,
-      (datePreset as string) || "all_time",
-      from as string | undefined,
-      to as string | undefined,
+      (datePreset as string) || "custom",
+      effectiveFrom,
+      effectiveTo,
     );
     const totalAdSpend = clientId
       ? await getClientKpiSpend(
           clientId as string,
-          (datePreset as string) || "all_time",
-          from as string | undefined,
-          to as string | undefined,
+          (datePreset as string) || "custom",
+          effectiveFrom,
+          effectiveTo,
         )
       : linkedCostSpend || orderAdSpend;
     const totalProductCost = orders.reduce(
@@ -1060,22 +1228,130 @@ router.get(
     const conversionRate =
       totalOrders > 0 ? Math.round((confirmed / totalOrders) * 100) : 0;
 
-    // Monthly breakdown (last 6 months)
-    const monthlyMap: Record<
-      string,
-      { revenue: number; profit: number; orders: number }
-    > = {};
-    orders.forEach((o: any) => {
-      const key = new Date(o.createdAt).toLocaleString("default", {
-        month: "short",
-        year: "2-digit",
-      });
-      if (!monthlyMap[key])
-        monthlyMap[key] = { revenue: 0, profit: 0, orders: 0 };
-      monthlyMap[key].revenue += o.orderAmount;
-      monthlyMap[key].profit += o.netProfit;
-      monthlyMap[key].orders++;
-    });
+    // Monthly breakdown
+    const fmtMonth = new Intl.DateTimeFormat("en-US", { month: "short" });
+    const ymKeyOf = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const monthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+
+    // Build a continuous month series for the selected/custom range,
+    // otherwise default to the last 6 months.
+    const seriesStart = effectiveFromDate
+      ? monthStart(effectiveFromDate)
+      : new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    const seriesEnd = effectiveToDate
+      ? monthStart(effectiveToDate)
+      : monthStart(today);
+    const seriesKeys: string[] = [];
+    {
+      const cursor = new Date(seriesStart);
+      while (cursor <= seriesEnd) {
+        seriesKeys.push(ymKeyOf(cursor));
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
+
+    type MonthlyAgg = {
+      year: number;
+      monthIndex: number;
+      revenue: number;
+      productCost: number;
+      shipping: number;
+      commissions: number;
+      orderAdSpend: number;
+      adSpend: number;
+      profit: number;
+      orders: number;
+    };
+    const monthlyMap: Record<string, MonthlyAgg> = {};
+    for (const key of seriesKeys) {
+      const [yy, mm] = key.split("-");
+      const year = Number(yy);
+      const monthIndex = Number(mm) - 1;
+      monthlyMap[key] = {
+        year,
+        monthIndex,
+        revenue: 0,
+        productCost: 0,
+        shipping: 0,
+        commissions: 0,
+        orderAdSpend: 0,
+        adSpend: 0,
+        profit: 0,
+        orders: 0,
+      };
+    }
+
+    for (const o of orders as any[]) {
+      const createdAt = new Date(o.createdAt);
+      const key = ymKeyOf(createdAt);
+      const bucket = monthlyMap[key];
+      if (!bucket) continue;
+      bucket.revenue += o.orderAmount;
+      bucket.productCost += o.productCost;
+      bucket.shipping += o.shippingCost;
+      bucket.commissions += o.closerCommission;
+      bucket.orderAdSpend += o.adCost;
+      bucket.orders += 1;
+    }
+
+    // Determine monthly ad spend strategy consistent with summary totals.
+    if (linkedCostSpend > 0) {
+      const start = new Date(seriesStart);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(
+        seriesEnd.getFullYear(),
+        seriesEnd.getMonth() + 1,
+        0,
+      );
+      end.setHours(23, 59, 59, 999);
+
+      const rows = (
+        clientId
+          ? await prisma.$queryRaw<{ ym: string; total: number }[]>`
+            SELECT to_char(date_trunc('month', date), 'YYYY-MM') as ym,
+                   SUM(amount)::float as total
+            FROM client_costs
+            WHERE "clientId" = ${clientId as string}
+              AND date >= ${start}
+              AND date <= ${end}
+            GROUP BY ym
+          `
+          : await prisma.$queryRaw<{ ym: string; total: number }[]>`
+            SELECT to_char(date_trunc('month', date), 'YYYY-MM') as ym,
+                   SUM(amount)::float as total
+            FROM client_costs
+            WHERE date >= ${start}
+              AND date <= ${end}
+            GROUP BY ym
+          `
+      ) as any[];
+
+      const costByYm: Record<string, number> = {};
+      for (const r of rows) costByYm[r.ym] = Number(r.total || 0);
+      for (const key of seriesKeys)
+        monthlyMap[key].adSpend = costByYm[key] || 0;
+    } else if (clientId) {
+      const revenueSum = seriesKeys.reduce(
+        (sum, k) => sum + monthlyMap[k].revenue,
+        0,
+      );
+      for (const key of seriesKeys) {
+        monthlyMap[key].adSpend =
+          revenueSum > 0
+            ? (totalAdSpend * monthlyMap[key].revenue) / revenueSum
+            : totalAdSpend / Math.max(seriesKeys.length, 1);
+      }
+    } else {
+      for (const key of seriesKeys)
+        monthlyMap[key].adSpend = monthlyMap[key].orderAdSpend;
+    }
+
+    for (const key of seriesKeys) {
+      const v = monthlyMap[key];
+      v.profit =
+        v.revenue - v.productCost - v.shipping - v.adSpend - v.commissions;
+    }
 
     // By status
     const statusMap: Record<string, number> = {};
@@ -1113,10 +1389,21 @@ router.get(
         conversionRate,
         totalCommissions: commissions._sum.amount ?? 0,
       },
-      monthly: Object.entries(monthlyMap).map(([month, v]) => ({
-        month,
-        ...v,
-      })),
+      monthly: seriesKeys
+        .slice()
+        .sort((a, b) => a.localeCompare(b))
+        .map((key) => {
+          const v = monthlyMap[key];
+          const label = `${fmtMonth.format(new Date(v.year, v.monthIndex, 1))} ${String(
+            v.year,
+          ).slice(-2)}`;
+          return {
+            month: label,
+            revenue: v.revenue,
+            profit: v.profit,
+            orders: v.orders,
+          };
+        }),
       byStatus: Object.entries(statusMap).map(([status, count]) => ({
         status,
         count,
