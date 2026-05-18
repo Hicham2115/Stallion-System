@@ -668,14 +668,26 @@ router.get(
   "/crm/orders",
   portalAuthenticate,
   async (req: PortalRequest, res: Response): Promise<void> => {
-    const { status, search, page = "1" } = req.query;
+    const { status, search, from, to, page = "1" } = req.query;
     const clientId = req.portalUser!.clientId;
     const take = 20;
     const skip = (parseInt(page as string) - 1) * take;
+    const dateFilter: Record<string, Date> = {};
+    if (from) {
+      const start = new Date(from as string);
+      start.setHours(0, 0, 0, 0);
+      dateFilter.gte = start;
+    }
+    if (to) {
+      const end = new Date(to as string);
+      end.setHours(23, 59, 59, 999);
+      dateFilter.lte = end;
+    }
 
     const where: any = {
       clientId,
       ...(status && { status }),
+      ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter }),
       ...(search && {
         OR: [
           { customerName: { contains: search as string, mode: "insensitive" } },

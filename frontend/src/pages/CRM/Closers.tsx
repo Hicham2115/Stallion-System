@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   RefreshCw,
   Award,
@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import api from "@/lib/api";
-import { CloserStat } from "@/types";
+import { Client, CloserStat, CommissionRule, CommissionType } from "@/types";
 import { cn, getInitials } from "@/lib/utils";
 import { useCrmCurrency } from "@/context/CrmCurrencyContext";
 import {
@@ -32,9 +32,23 @@ export default function Closers() {
   const { fmt } = useCrmCurrency();
   const [view, setView] = useState<"performance" | "team">("performance");
   const [closers, setClosers] = useState<CloserStat[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [teamSearch, setTeamSearch] = useState("");
   const [toggling, setToggling] = useState<string | null>(null);
+
+  const [activateModal, setActivateModal] = useState<null | {
+    closerId: string;
+    closerName: string;
+  }>(null);
+  const [activating, setActivating] = useState(false);
+  const [activateError, setActivateError] = useState("");
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [commissionType, setCommissionType] =
+    useState<CommissionType>("FIXED_PER_ORDER");
+  const [commissionValue, setCommissionValue] = useState("");
 
   const loadClosers = async () => {
     setLoading(true);
@@ -46,8 +60,18 @@ export default function Closers() {
     }
   };
 
+  const loadClients = async () => {
+    try {
+      const res = await api.get<any>("/clients?limit=250");
+      setClients(Array.isArray(res.data) ? res.data : res.data.clients || []);
+    } catch {
+      setClients([]);
+    }
+  };
+
   useEffect(() => {
     loadClosers();
+    loadClients();
   }, []);
 
   async function toggleCloser(userId: string) {
@@ -57,6 +81,95 @@ export default function Closers() {
       await loadClosers();
     } finally {
       setToggling(null);
+    }
+  }
+
+  function openActivateModal(closer: { id: string; name: string }) {
+    setActivateError("");
+    setSelectedClientIds(new Set());
+    setCommissionType("FIXED_PER_ORDER");
+    setCommissionValue("");
+    setActivateModal({ closerId: closer.id, closerName: closer.name });
+  }
+
+  async function activateCloserWithCommission() {
+    if (!activateModal) return;
+    if (selectedClientIds.size === 0) {
+      setActivateError("Please select at least one client.");
+      return;
+    }
+    if (!commissionValue || Number(commissionValue) <= 0) {
+      setActivateError(
+        commissionType === "FIXED_PER_ORDER"
+          ? "Please enter a fixed amount."
+          : "Please enter a percentage.",
+      );
+      return;
+    }
+
+    setActivating(true);
+    setActivateError("");
+
+    try {
+      // 1) Make the user a closer (activate)
+      await api.put(`/users/${activateModal.closerId}/toggle-closer`);
+
+      const selectedClients = clients.filter((c) =>
+        selectedClientIds.has(c.id),
+      );
+      const valueNum = Number(commissionValue);
+
+      // 2) For each selected client: assign closer + create/update commission rule
+      await Promise.all(
+        selectedClients.map(async (client) => {
+          // Assign closer to client (ignore duplicates)
+          try {
+            await api.post(`/clients/${client.id}/closers`, {
+              userId: activateModal.closerId,
+            });
+          } catch (err: any) {
+            if (err?.response?.status !== 409) throw err;
+          }
+
+          // Create or update an existing closer-specific rule for this client
+          const { data: existing } = await api.get<CommissionRule[]>(
+            `/crm/commission-rules?clientId=${client.id}`,
+          );
+          const existingForCloser = existing.find(
+            (r) => r.closerId === activateModal.closerId,
+          );
+
+          const basePayload = {
+            clientId: client.id,
+            closerId: activateModal.closerId,
+            name: `${activateModal.closerName} · ${client.name}`,
+            type: commissionType,
+            fixedAmount: commissionType === "FIXED_PER_ORDER" ? valueNum : null,
+            percentage: commissionType === "PERCENTAGE" ? valueNum : null,
+            description: null,
+          };
+
+          if (existingForCloser) {
+            await api.put(`/crm/commission-rules/${existingForCloser.id}`, {
+              ...basePayload,
+              active: true,
+            });
+          } else {
+            await api.post(`/crm/commission-rules`, basePayload);
+          }
+        }),
+      );
+
+      setActivateModal(null);
+      await loadClosers();
+    } catch (err: any) {
+      setActivateError(
+        err?.response?.data?.message || "Failed to activate closer.",
+      );
+      // If activation succeeded but later steps failed, user is still a closer.
+      await loadClosers();
+    } finally {
+      setActivating(false);
     }
   }
 
@@ -74,6 +187,10 @@ export default function Closers() {
       c.name.toLowerCase().includes(teamSearch.toLowerCase()) ||
       c.email.toLowerCase().includes(teamSearch.toLowerCase()),
   );
+
+  const clientList = useMemo(() => {
+    return [...clients].sort((a, b) => a.name.localeCompare(b.name));
+  }, [clients]);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -312,8 +429,7 @@ export default function Closers() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-sky-500 font-medium">
-                            <Truck className="w-3.5 h-3.5" />{" "}
-                            {c.deliveredOrders}
+                            <Truck className="w-3.5 h-3.5" /> {c.shippedOrders}
                           </div>
                         </td>
                         <td className="px-4 py-3">
@@ -418,7 +534,9 @@ export default function Closers() {
                         </span>
                       )}
                       <button
-                        onClick={() => toggleCloser(c.id)}
+                        onClick={() =>
+                          c.isCloser ? toggleCloser(c.id) : openActivateModal(c)
+                        }
                         disabled={isToggling}
                         className={cn(
                           "flex items-center gap-1.5 text-sm font-medium transition-colors",
@@ -450,6 +568,145 @@ export default function Closers() {
                   No users found
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activate closer modal */}
+      {activateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => (!activating ? setActivateModal(null) : null)}
+          />
+          <div className="relative bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-slate-900 dark:text-white">
+                  Activate closer
+                </h3>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  Choose client(s) + commission settings for{" "}
+                  {activateModal.closerName}.
+                </p>
+              </div>
+              <button
+                onClick={() => setActivateModal(null)}
+                disabled={activating}
+                className="btn-secondary px-3 py-1.5 text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            <div>
+              <label className="label">Client(s) *</label>
+              <div className="mt-1 max-h-52 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-2">
+                {clientList.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-slate-400">
+                    No clients found
+                  </div>
+                ) : (
+                  clientList.map((client) => {
+                    const checked = selectedClientIds.has(client.id);
+                    return (
+                      <label
+                        key={client.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-white/60 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = new Set(selectedClientIds);
+                              if (e.target.checked) next.add(client.id);
+                              else next.delete(client.id);
+                              setSelectedClientIds(next);
+                            }}
+                            className="accent-amber-500"
+                          />
+                          <span className="text-sm text-slate-800 dark:text-slate-200">
+                            {client.name}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  Selected: {selectedClientIds.size}
+                </span>
+                <button
+                  type="button"
+                  className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                  onClick={() => setSelectedClientIds(new Set())}
+                  disabled={activating || selectedClientIds.size === 0}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Commission Type</label>
+                <select
+                  className="select mt-1"
+                  value={commissionType}
+                  onChange={(e) =>
+                    setCommissionType(e.target.value as CommissionType)
+                  }
+                >
+                  <option value="FIXED_PER_ORDER">Fixed per Order</option>
+                  <option value="PERCENTAGE">Percentage of Sale</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">
+                  {commissionType === "FIXED_PER_ORDER"
+                    ? "Fixed Amount"
+                    : "Percentage"}
+                </label>
+                <input
+                  className="input mt-1"
+                  type="number"
+                  step={commissionType === "FIXED_PER_ORDER" ? "0.01" : "0.1"}
+                  max={commissionType === "PERCENTAGE" ? 100 : undefined}
+                  value={commissionValue}
+                  onChange={(e) => setCommissionValue(e.target.value)}
+                  placeholder={
+                    commissionType === "FIXED_PER_ORDER" ? "20" : "5"
+                  }
+                />
+              </div>
+            </div>
+
+            {activateError && (
+              <p className="text-sm text-red-500">{activateError}</p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setActivateModal(null)}
+                disabled={activating}
+                className="btn-secondary flex-1 py-2 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={activateCloserWithCommission}
+                disabled={activating}
+                className="btn-primary flex-1 py-2 text-sm flex items-center justify-center gap-2"
+              >
+                {activating && (
+                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
+                {activating ? "Saving…" : "Activate & Save"}
+              </button>
             </div>
           </div>
         </div>

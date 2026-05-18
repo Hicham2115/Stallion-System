@@ -121,6 +121,29 @@ const CHART_STYLE = {
   labelStyle: { color: "#94a3b8" },
 };
 
+function toIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function monthOptions() {
+  const fmtMonth = new Intl.DateTimeFormat("en-US", { month: "short" });
+  return Array.from({ length: 8 }, (_, index) => {
+    const date = new Date();
+    date.setMonth(date.getMonth() - index, 1);
+    const start = new Date(date.getFullYear(), date.getMonth(), 1);
+    const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    return {
+      key: `${date.getFullYear()}-${date.getMonth()}`,
+      label: `${fmtMonth.format(date)} ${date.getFullYear()}`,
+      from: toIsoDate(start),
+      to: toIsoDate(end),
+    };
+  });
+}
+
 export default function ClientCrm() {
   const { fmt } = usePortalCurrency();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -130,6 +153,7 @@ export default function ClientCrm() {
   const [pages, setPages] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
 
@@ -146,6 +170,13 @@ export default function ClientCrm() {
     const params = new URLSearchParams({ page: String(page) });
     if (search) params.set("search", search);
     if (statusFilter) params.set("status", statusFilter);
+    if (monthFilter) {
+      const month = monthOptions().find((m) => m.key === monthFilter);
+      if (month) {
+        params.set("from", month.from);
+        params.set("to", month.to);
+      }
+    }
     const { data } = await portalApi.get<{
       orders: Order[];
       total: number;
@@ -159,7 +190,7 @@ export default function ClientCrm() {
 
   useEffect(() => {
     loadOrders();
-  }, [search, statusFilter, page]);
+  }, [search, statusFilter, monthFilter, page]);
 
   const kpis = stats
     ? [
@@ -576,6 +607,21 @@ export default function ClientCrm() {
             ).map((s) => (
               <option key={s} value={s}>
                 {s.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+          <select
+            className="bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-amber-500/50"
+            value={monthFilter}
+            onChange={(e) => {
+              setMonthFilter(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All Months</option>
+            {monthOptions().map((month) => (
+              <option key={month.key} value={month.key}>
+                {month.label}
               </option>
             ))}
           </select>

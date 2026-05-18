@@ -4,7 +4,6 @@ import {
   ShoppingCart,
   CheckCircle,
   XCircle,
-  RotateCcw,
   DollarSign,
   Award,
   Package,
@@ -40,6 +39,7 @@ interface AnalyticsData {
     totalProductCost: number;
     totalShipping: number;
     confirmed: number;
+    shipped?: number;
     delivered: number;
     cancelled: number;
     returned: number;
@@ -140,6 +140,34 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
 
   const s = data?.summary;
 
+  const mergedCancelled = s ? s.cancelled + s.returned : 0;
+
+  const mergedByStatus = (() => {
+    const list = data?.byStatus || [];
+    const out: { status: string; count: number }[] = [];
+    const indexByStatus: Record<string, number> = {};
+    for (const entry of list) {
+      const status = entry.status === "RETURNED" ? "CANCELLED" : entry.status;
+      const existingIndex = indexByStatus[status];
+      if (existingIndex === undefined) {
+        indexByStatus[status] = out.length;
+        out.push({ status, count: entry.count });
+      } else {
+        out[existingIndex].count += entry.count;
+      }
+    }
+    return out;
+  })();
+
+  const shippedCount =
+    s?.shipped ??
+    (data?.byStatus || []).reduce((sum, entry) => {
+      if (entry.status === "SHIPPED" || entry.status === "DELIVERED") {
+        return sum + entry.count;
+      }
+      return sum;
+    }, 0);
+
   const kpis = s
     ? [
         {
@@ -170,10 +198,16 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
           color: "text-emerald-500",
           bg: "bg-emerald-500/10",
         },
-        // { label: 'Shipped in all platforme', value: s.delivered.toString(), icon: Truck, color: 'text-sky-500', bg: 'bg-sky-500/10' },
+        {
+          label: "Shipped",
+          value: shippedCount.toString(),
+          icon: Truck,
+          color: "text-sky-500",
+          bg: "bg-sky-500/10",
+        },
         {
           label: "Cancelled",
-          value: s.cancelled.toString(),
+          value: mergedCancelled.toString(),
           icon: XCircle,
           color: "text-red-500",
           bg: "bg-red-500/10",
@@ -205,13 +239,6 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
           icon: Award,
           color: "text-indigo-500",
           bg: "bg-indigo-500/10",
-        },
-        {
-          label: "Returns",
-          value: s.returned.toString(),
-          icon: RotateCcw,
-          color: "text-orange-500",
-          bg: "bg-orange-500/10",
         },
         {
           label: "Costs",
@@ -257,10 +284,7 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
           >
             <option value="">All Months</option>
             {monthOptions().map((month) => (
-              <option
-                key={month.key}
-                value={month.key}
-              >
+              <option key={month.key} value={month.key}>
                 {month.label}
               </option>
             ))}
@@ -416,7 +440,7 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
-                    data={data?.byStatus || []}
+                    data={mergedByStatus}
                     dataKey="count"
                     nameKey="status"
                     cx="50%"
@@ -425,7 +449,7 @@ export default function CrmDashboard({ onNavigate, analyticsMode }: Props) {
                     outerRadius={90}
                     paddingAngle={3}
                   >
-                    {(data?.byStatus || []).map((entry, i) => (
+                    {mergedByStatus.map((entry, i) => (
                       <Cell
                         key={i}
                         fill={STATUS_COLORS[entry.status] || "#94a3b8"}

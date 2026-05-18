@@ -48,11 +48,23 @@ function getPresetRange(datePreset: string) {
   return { start, end };
 }
 
-async function getClientKpiSpend(clientId: string, datePreset: string, from?: string, to?: string) {
-  const linkedCostSpend = await getClientCostsSpend(clientId, datePreset, from, to);
+async function getClientKpiSpend(
+  clientId: string,
+  datePreset: string,
+  from?: string,
+  to?: string,
+) {
+  const linkedCostSpend = await getClientCostsSpend(
+    clientId,
+    datePreset,
+    from,
+    to,
+  );
   if (linkedCostSpend > 0) return linkedCostSpend;
 
-  const config = await prisma.clientKpiConfig.findUnique({ where: { clientId } });
+  const config = await prisma.clientKpiConfig.findUnique({
+    where: { clientId },
+  });
   if (config?.metaToken && config?.metaAdAccountId) {
     try {
       const url = `https://graph.facebook.com/v19.0/act_${config.metaAdAccountId}/insights?fields=spend&date_preset=${datePreset}&level=account&access_token=${config.metaToken}`;
@@ -69,21 +81,35 @@ async function getClientKpiSpend(clientId: string, datePreset: string, from?: st
   return 0;
 }
 
-async function getClientCostsSpend(clientId: string | undefined, datePreset: string, from?: string, to?: string) {
-  const customRange = from || to
-    ? {
-        start: from ? new Date(from) : undefined,
-        end: to ? new Date(to) : undefined,
-      }
-    : null;
+async function getClientCostsSpend(
+  clientId: string | undefined,
+  datePreset: string,
+  from?: string,
+  to?: string,
+) {
+  const customRange =
+    from || to
+      ? {
+          start: from ? new Date(from) : undefined,
+          end: to ? new Date(to) : undefined,
+        }
+      : null;
   if (customRange?.start) customRange.start.setHours(0, 0, 0, 0);
   if (customRange?.end) customRange.end.setHours(23, 59, 59, 999);
-  const presetRange = datePreset === "all_time" ? null : getPresetRange(datePreset);
+  const presetRange =
+    datePreset === "all_time" ? null : getPresetRange(datePreset);
   const range = customRange || presetRange;
   const costs = await prisma.clientCost.aggregate({
     where: {
       ...(clientId ? { clientId } : {}),
-      ...(range ? { date: { ...(range.start ? { gte: range.start } : {}), ...(range.end ? { lte: range.end } : {}) } } : {}),
+      ...(range
+        ? {
+            date: {
+              ...(range.start ? { gte: range.start } : {}),
+              ...(range.end ? { lte: range.end } : {}),
+            },
+          }
+        : {}),
     },
     _sum: { amount: true },
   });
@@ -118,6 +144,8 @@ router.get(
       paymentStatus,
       source,
       search,
+      from,
+      to,
       page = "1",
       limit = "50",
     } = req.query;
@@ -128,6 +156,20 @@ router.get(
     if (status) where.status = status;
     if (paymentStatus) where.paymentStatus = paymentStatus;
     if (source) where.source = source;
+    if (from || to) {
+      const dateFilter: Record<string, Date> = {};
+      if (from) {
+        const start = new Date(from as string);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.gte = start;
+      }
+      if (to) {
+        const end = new Date(to as string);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.lte = end;
+      }
+      where.createdAt = dateFilter;
+    }
     if (search) {
       where.OR = [
         { customerName: { contains: search as string, mode: "insensitive" } },
@@ -205,12 +247,10 @@ router.post(
       shopifyStore,
     } = req.body;
     if (!clientId || !customerName || !productName || !orderAmount) {
-      res
-        .status(400)
-        .json({
-          message:
-            "clientId, customerName, productName, orderAmount are required",
-        });
+      res.status(400).json({
+        message:
+          "clientId, customerName, productName, orderAmount are required",
+      });
       return;
     }
 
@@ -491,26 +531,33 @@ router.get(
         WHERE active = true AND suspended = false ORDER BY name ASC`;
     const stats = await Promise.all(
       users.map(async (u) => {
-        const [total, confirmed, delivered, earnings] = await Promise.all([
-          (prisma as any).crmOrder.count({ where: { closerId: u.id } }),
-          (prisma as any).crmOrder.count({
-            where: { closerId: u.id, status: "CONFIRMED" },
-          }),
-          (prisma as any).crmOrder.count({
-            where: { closerId: u.id, status: "DELIVERED" },
-          }),
-          (prisma as any).closerCommissionRecord.aggregate({
-            where: { closerId: u.id },
-            _sum: { amount: true },
-          }),
-        ]);
+        const [total, confirmed, shipped, delivered, earnings] =
+          await Promise.all([
+            (prisma as any).crmOrder.count({ where: { closerId: u.id } }),
+            (prisma as any).crmOrder.count({
+              where: { closerId: u.id, status: "CONFIRMED" },
+            }),
+            (prisma as any).crmOrder.count({
+              where: { closerId: u.id, status: "SHIPPED" },
+            }),
+            (prisma as any).crmOrder.count({
+              where: { closerId: u.id, status: "DELIVERED" },
+            }),
+            (prisma as any).closerCommissionRecord.aggregate({
+              where: { closerId: u.id },
+              _sum: { amount: true },
+            }),
+          ]);
         return {
           ...u,
           totalOrders: total,
           confirmedOrders: confirmed,
+          shippedOrders: shipped,
           deliveredOrders: delivered,
           conversionRate:
-            total > 0 ? Math.round(((confirmed + delivered) / total) * 100) : 0,
+            total > 0
+              ? Math.round(((confirmed + shipped + delivered) / total) * 100)
+              : 0,
           totalEarnings: earnings._sum.amount ?? 0,
         };
       }),
@@ -688,11 +735,9 @@ router.post(
   h(async (req, res) => {
     const { clientId, storeName, storeUrl, accessToken } = req.body;
     if (!clientId || !storeName || !storeUrl || !accessToken) {
-      res
-        .status(400)
-        .json({
-          message: "clientId, storeName, storeUrl, accessToken are required",
-        });
+      res.status(400).json({
+        message: "clientId, storeName, storeUrl, accessToken are required",
+      });
       return;
     }
     const config = await (prisma as any).shopifyConfig.create({
@@ -973,7 +1018,12 @@ router.get(
       to as string | undefined,
     );
     const totalAdSpend = clientId
-      ? await getClientKpiSpend(clientId as string, (datePreset as string) || "all_time", from as string | undefined, to as string | undefined)
+      ? await getClientKpiSpend(
+          clientId as string,
+          (datePreset as string) || "all_time",
+          from as string | undefined,
+          to as string | undefined,
+        )
       : linkedCostSpend || orderAdSpend;
     const totalProductCost = orders.reduce(
       (s: number, o: any) => s + o.productCost,
@@ -988,9 +1038,16 @@ router.get(
       0,
     );
     const totalNetProfit =
-      totalRevenue - totalProductCost - totalShipping - totalAdSpend - totalOrderCommissions;
+      totalRevenue -
+      totalProductCost -
+      totalShipping -
+      totalAdSpend -
+      totalOrderCommissions;
     const confirmed = orders.filter(
       (o: any) => o.status === "CONFIRMED" || o.status === "DELIVERED",
+    ).length;
+    const shipped = orders.filter(
+      (o: any) => o.status === "SHIPPED" || o.status === "DELIVERED",
     ).length;
     const delivered = orders.filter(
       (o: any) => o.status === "DELIVERED",
@@ -1048,6 +1105,7 @@ router.get(
         totalProductCost,
         totalShipping,
         confirmed,
+        shipped,
         delivered,
         cancelled,
         returned,

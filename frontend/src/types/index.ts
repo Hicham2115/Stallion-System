@@ -121,6 +121,7 @@ export interface CloserStat {
   isCloser: boolean;
   totalOrders: number;
   confirmedOrders: number;
+  shippedOrders: number;
   deliveredOrders: number;
   conversionRate: number;
   totalEarnings: number;

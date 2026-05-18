@@ -65,6 +65,29 @@ const PAYMENT_CONFIG = {
   REFUNDED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
+function toIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function monthOptions() {
+  const fmtMonth = new Intl.DateTimeFormat("en-US", { month: "short" });
+  return Array.from({ length: 8 }, (_, index) => {
+    const date = new Date();
+    date.setMonth(date.getMonth() - index, 1);
+    const start = new Date(date.getFullYear(), date.getMonth(), 1);
+    const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    return {
+      key: `${date.getFullYear()}-${date.getMonth()}`,
+      label: `${fmtMonth.format(date)} ${date.getFullYear()}`,
+      from: toIsoDate(start),
+      to: toIsoDate(end),
+    };
+  });
+}
+
 export default function Orders() {
   const { fmt } = useCrmCurrency();
   const [orders, setOrders] = useState<CrmOrder[]>([]);
@@ -74,6 +97,7 @@ export default function Orders() {
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -99,6 +123,13 @@ export default function Orders() {
       if (search) params.set("search", search);
       if (clientFilter) params.set("clientId", clientFilter);
       if (statusFilter) params.set("status", statusFilter);
+      if (monthFilter) {
+        const month = monthOptions().find((m) => m.key === monthFilter);
+        if (month) {
+          params.set("from", month.from);
+          params.set("to", month.to);
+        }
+      }
       const { data } = await api.get<{
         orders: CrmOrder[];
         total: number;
@@ -110,14 +141,14 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, clientFilter, statusFilter]);
+  }, [page, search, clientFilter, statusFilter, monthFilter]);
 
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
   useEffect(() => {
     setPage(1);
-  }, [search, clientFilter, statusFilter]);
+  }, [search, clientFilter, statusFilter, monthFilter]);
 
   async function handleDelete(id: string) {
     await api.delete(`/crm/orders/${id}`);
@@ -179,6 +210,18 @@ export default function Orders() {
           {Object.entries(STATUS_CONFIG).map(([v, { label }]) => (
             <option key={v} value={v}>
               {label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="select w-full sm:w-44"
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value)}
+        >
+          <option value="">All Months</option>
+          {monthOptions().map((month) => (
+            <option key={month.key} value={month.key}>
+              {month.label}
             </option>
           ))}
         </select>
