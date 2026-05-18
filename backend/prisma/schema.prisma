@@ -248,8 +248,23 @@ model Client {
   shopifyConfigs    ShopifyConfig[]
   commissionRules   CommissionRule[]
   assignedClosers   ClientCloser[]
+  costs             ClientCost[]
 
   @@map("clients")
+}
+
+model ClientCost {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name      String
+  amount    Float
+  date      DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId, date, createdAt])
+  @@map("client_costs")
 }
 
 model Payment {

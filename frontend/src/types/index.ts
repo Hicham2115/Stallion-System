@@ -1,10 +1,26 @@
-export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'TEAM_MEMBER';
+export type Role = "SUPER_ADMIN" | "ADMIN" | "MANAGER" | "TEAM_MEMBER";
 
 // CRM Types
-export type OrderStatus = 'NEW' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'NO_ANSWER' | 'CANCELLED' | 'REFUSED' | 'SHIPPED' | 'DELIVERED' | 'RETURNED';
-export type OrderPaymentStatus = 'PAID' | 'COD_PENDING' | 'REFUNDED';
-export type OrderSource = 'FACEBOOK_ADS' | 'TIKTOK_ADS' | 'GOOGLE_ADS' | 'ORGANIC' | 'WHATSAPP' | 'INSTAGRAM' | 'OTHER';
-export type CommissionType = 'FIXED_PER_ORDER' | 'PERCENTAGE';
+export type OrderStatus =
+  | "NEW"
+  | "PENDING_CONFIRMATION"
+  | "CONFIRMED"
+  | "NO_ANSWER"
+  | "CANCELLED"
+  | "REFUSED"
+  | "SHIPPED"
+  | "DELIVERED"
+  | "RETURNED";
+export type OrderPaymentStatus = "PAID" | "COD_PENDING" | "REFUNDED";
+export type OrderSource =
+  | "FACEBOOK_ADS"
+  | "TIKTOK_ADS"
+  | "GOOGLE_ADS"
+  | "ORGANIC"
+  | "WHATSAPP"
+  | "INSTAGRAM"
+  | "OTHER";
+export type CommissionType = "FIXED_PER_ORDER" | "PERCENTAGE";
 
 export interface CrmOrder {
   id: string;
@@ -83,7 +99,13 @@ export interface CloserCommissionRecord {
   closerId: string;
   closer?: { id: string; name: string };
   orderId: string;
-  order?: { id: string; customerName: string; productName: string; orderAmount: number; confirmedAt?: string };
+  order?: {
+    id: string;
+    customerName: string;
+    productName: string;
+    orderAmount: number;
+    confirmedAt?: string;
+  };
   amount: number;
   paid: boolean;
   paidAt?: string;
@@ -103,20 +125,47 @@ export interface CloserStat {
   conversionRate: number;
   totalEarnings: number;
 }
-export type Currency = 'MAD' | 'USD' | 'EUR';
-export interface ExchangeRates { [base: string]: { [target: string]: number } }
+export type Currency = "MAD" | "USD" | "EUR";
+export interface ExchangeRates {
+  [base: string]: { [target: string]: number };
+}
 
-export type ClientStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'PENDING' | 'ONE_TIME';
-export type BillingFrequency = 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
-export type PaymentMethod = 'BANK_TRANSFER' | 'CREDIT_CARD' | 'CASH' | 'CHECK' | 'PAYPAL' | 'OTHER';
-export type PaymentStatus = 'PAID' | 'PENDING' | 'OVERDUE';
-export type ExpenseCategory = 'RENT' | 'SALARIES' | 'SOFTWARE_SUBSCRIPTIONS' | 'INSURANCE' | 'ADS_SPEND' | 'FREELANCERS' | 'EQUIPMENT' | 'TRAVEL' | 'MISC';
-export type ExpenseType = 'FIXED' | 'VARIABLE';
-export type ExpensePaymentStatus = 'PAID' | 'PENDING';
-export type LeadSource = 'REFERRAL' | 'WEBSITE' | 'SOCIAL_MEDIA' | 'COLD_OUTREACH' | 'EVENT';
-export type LeadStage = 'NEW' | 'WARMED' | 'CLOSED_WON' | 'CLOSED_LOST';
-export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'COMPLETED';
+export type ClientStatus =
+  | "ACTIVE"
+  | "PAUSED"
+  | "CANCELLED"
+  | "PENDING"
+  | "ONE_TIME";
+export type BillingFrequency = "MONTHLY" | "QUARTERLY" | "ANNUALLY";
+export type PaymentMethod =
+  | "BANK_TRANSFER"
+  | "CREDIT_CARD"
+  | "CASH"
+  | "CHECK"
+  | "PAYPAL"
+  | "OTHER";
+export type PaymentStatus = "PAID" | "PENDING" | "OVERDUE";
+export type ExpenseCategory =
+  | "RENT"
+  | "SALARIES"
+  | "SOFTWARE_SUBSCRIPTIONS"
+  | "INSURANCE"
+  | "ADS_SPEND"
+  | "FREELANCERS"
+  | "EQUIPMENT"
+  | "TRAVEL"
+  | "MISC";
+export type ExpenseType = "FIXED" | "VARIABLE";
+export type ExpensePaymentStatus = "PAID" | "PENDING";
+export type LeadSource =
+  | "REFERRAL"
+  | "WEBSITE"
+  | "SOCIAL_MEDIA"
+  | "COLD_OUTREACH"
+  | "EVENT";
+export type LeadStage = "NEW" | "WARMED" | "CLOSED_WON" | "CLOSED_LOST";
+export type Priority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "REVIEW" | "COMPLETED";
 
 export interface User {
   id: string;
@@ -174,7 +223,7 @@ export interface Client {
 export interface Payment {
   id: string;
   clientId: string;
-  client?: Pick<Client, 'id' | 'name' | 'service'>;
+  client?: Pick<Client, "id" | "name" | "service">;
   amount: number;
   date: string;
   method: PaymentMethod;
@@ -210,7 +259,7 @@ export interface Lead {
   source: LeadSource;
   stage: LeadStage;
   assignedToId?: string;
-  assignedTo?: Pick<User, 'id' | 'name' | 'avatar'>;
+  assignedTo?: Pick<User, "id" | "name" | "avatar">;
   notes?: string;
   followUpDate?: string;
   createdAt: string;
@@ -231,9 +280,9 @@ export interface Task {
   title: string;
   description?: string;
   assignedToId?: string;
-  assignedTo?: Pick<User, 'id' | 'name' | 'avatar'>;
+  assignedTo?: Pick<User, "id" | "name" | "avatar">;
   clientId?: string;
-  client?: Pick<Client, 'id' | 'name'>;
+  client?: Pick<Client, "id" | "name">;
   priority: Priority;
   dueDate?: string;
   status: TaskStatus;
@@ -245,9 +294,9 @@ export interface Task {
 export interface ActivityLog {
   id: string;
   userId?: string;
-  user?: Pick<User, 'id' | 'name' | 'avatar'>;
+  user?: Pick<User, "id" | "name" | "avatar">;
   clientId?: string;
-  client?: Pick<Client, 'id' | 'name'>;
+  client?: Pick<Client, "id" | "name">;
   module: string;
   action: string;
   details?: string;
@@ -284,7 +333,12 @@ export interface MonthlyChartData {
   profit: number;
 }
 
-export type MeetingStatus = 'SCHEDULED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED';
+export type MeetingStatus =
+  | "SCHEDULED"
+  | "CONFIRMED"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "RESCHEDULED";
 
 export interface MeetingType {
   id: string;
@@ -315,9 +369,9 @@ export interface BlockedDate {
 export interface Meeting {
   id: string;
   clientId?: string;
-  client?: Pick<Client, 'id' | 'name'>;
+  client?: Pick<Client, "id" | "name">;
   adminId: string;
-  admin?: Pick<User, 'id' | 'name' | 'avatar'>;
+  admin?: Pick<User, "id" | "name" | "avatar">;
   meetingTypeId?: string;
   meetingType?: MeetingType;
   title: string;
@@ -335,8 +389,8 @@ export interface Meeting {
   updatedAt: string;
 }
 
-export type ChannelType = 'PUBLIC' | 'PRIVATE';
-export type MessageType = 'TEXT' | 'FILE' | 'IMAGE' | 'SYSTEM';
+export type ChannelType = "PUBLIC" | "PRIVATE";
+export type MessageType = "TEXT" | "FILE" | "IMAGE" | "SYSTEM";
 
 export interface ChannelMemberEntry {
   user: { id: string; name: string; avatar?: string; role: string };
@@ -381,7 +435,11 @@ export interface ChatMessage {
   fileUrl?: string;
   fileName?: string;
   replyToId?: string;
-  replyTo?: { id: string; content: string; sender: { id: string; name: string } } | null;
+  replyTo?: {
+    id: string;
+    content: string;
+    sender: { id: string; name: string };
+  } | null;
   reactions: MessageReaction[];
   edited: boolean;
   deletedAt?: string | null;
@@ -391,9 +449,29 @@ export interface ChatMessage {
 
 // ─── Client Portal Types ──────────────────────────────────────────────────────
 
-export type ContentCategory = 'SOCIAL_POST' | 'REEL' | 'VIDEO' | 'AD_CREATIVE' | 'BANNER' | 'THUMBNAIL' | 'BRANDING' | 'OTHER';
-export type ContentStatus = 'DRAFT' | 'WAITING_APPROVAL' | 'APPROVED' | 'NEEDS_REVISION' | 'PUBLISHED';
-export type ProjectPhase = 'DISCOVERY' | 'PLANNING' | 'DESIGN' | 'DEVELOPMENT' | 'TESTING' | 'DEPLOYMENT' | 'MAINTENANCE';
+export type ContentCategory =
+  | "SOCIAL_POST"
+  | "REEL"
+  | "VIDEO"
+  | "AD_CREATIVE"
+  | "BANNER"
+  | "THUMBNAIL"
+  | "BRANDING"
+  | "OTHER";
+export type ContentStatus =
+  | "DRAFT"
+  | "WAITING_APPROVAL"
+  | "APPROVED"
+  | "NEEDS_REVISION"
+  | "PUBLISHED";
+export type ProjectPhase =
+  | "DISCOVERY"
+  | "PLANNING"
+  | "DESIGN"
+  | "DEVELOPMENT"
+  | "TESTING"
+  | "DEPLOYMENT"
+  | "MAINTENANCE";
 
 export interface PortalClient {
   id: string;
@@ -473,6 +551,16 @@ export interface ClientNotification {
   createdAt: string;
 }
 
+export interface ClientCost {
+  id: string;
+  clientId: string;
+  name: string;
+  amount: number;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface KpiSummary {
   spend: number;
   reach: number;
@@ -492,6 +580,8 @@ export interface KpiDailyEntry {
   spend: number;
   reach: number;
   leads: number;
+  purchases: number;
+  conversionRate: number;
   roas: number;
 }
 
