@@ -7,6 +7,27 @@ import { getRatesCache } from "../lib/currency";
 
 const router = Router();
 
+function getPresetRange(datePreset: string) {
+  const days =
+    datePreset === "today"
+      ? 1
+      : datePreset === "last_7d"
+        ? 7
+        : datePreset === "last_30d"
+          ? 30
+          : 90;
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+  start.setHours(0, 0, 0, 0);
+  return { days, start, end };
+}
+
+function isoDay(date: Date) {
+  return date.toISOString().split("T")[0];
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 router.post("/login", async (req, res): Promise<void> => {
@@ -912,29 +933,31 @@ router.get(
       }
     }
 
-    // Mock data
-    const days =
-      datePreset === "today"
-        ? 1
-        : datePreset === "last_7d"
-          ? 7
-          : datePreset === "last_30d"
-            ? 30
-            : 90;
+    const { days, start, end } = getPresetRange(datePreset);
+    const costs = await (prisma as any).clientCost.findMany({
+      where: {
+        clientId: req.portalUser!.clientId,
+        date: { gte: start, lte: end },
+      },
+      select: { amount: true, date: true },
+    });
+    const spendByDay = costs.reduce((map: Record<string, number>, cost: any) => {
+      const key = isoDay(new Date(cost.date));
+      map[key] = (map[key] || 0) + Number(cost.amount || 0);
+      return map;
+    }, {});
     const daily = Array.from({ length: days }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (days - 1 - i));
-      const spend = 800 + Math.random() * 400;
-      const leads = Math.floor(8 + Math.random() * 12);
-      const purchases = Math.floor(leads * 0.15);
+      const spend = spendByDay[isoDay(d)] || 0;
       return {
-        date: d.toISOString().split("T")[0],
+        date: isoDay(d),
         spend: parseFloat(spend.toFixed(2)),
-        reach: Math.floor(3000 + Math.random() * 2000),
-        leads,
-        purchases,
-        conversionRate: leads > 0 ? (purchases / leads) * 100 : 0,
-        roas: parseFloat((2.5 + Math.random() * 1.5).toFixed(2)),
+        reach: 0,
+        leads: 0,
+        purchases: 0,
+        conversionRate: 0,
+        roas: 0,
       };
     });
     const totalSpend = daily.reduce((s, d) => s + d.spend, 0);
@@ -943,19 +966,19 @@ router.get(
     const totalPurchases = daily.reduce((s, d) => s + d.purchases, 0);
 
     res.json({
-      isMock: true,
+      isMock: false,
       datePreset,
       summary: {
         spend: parseFloat(totalSpend.toFixed(2)),
         reach: totalReach,
         impressions: Math.floor(totalReach * 1.8),
-        cpm: parseFloat((totalSpend / (totalReach / 1000)).toFixed(2)),
-        cpc: parseFloat((totalSpend / (totalLeads * 3)).toFixed(2)),
-        ctr: parseFloat((2.1 + Math.random() * 1.5).toFixed(2)),
+        cpm: totalReach > 0 ? parseFloat((totalSpend / (totalReach / 1000)).toFixed(2)) : 0,
+        cpc: totalLeads > 0 ? parseFloat((totalSpend / (totalLeads * 3)).toFixed(2)) : 0,
+        ctr: 0,
         leads: totalLeads,
         purchases: totalPurchases,
-        roas: parseFloat((3.2 + Math.random()).toFixed(2)),
-        costPerLead: parseFloat((totalSpend / totalLeads).toFixed(2)),
+        roas: 0,
+        costPerLead: totalLeads > 0 ? parseFloat((totalSpend / totalLeads).toFixed(2)) : 0,
         conversionRate:
           totalLeads > 0
             ? parseFloat(((totalPurchases / totalLeads) * 100).toFixed(2))

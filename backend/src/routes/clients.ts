@@ -16,6 +16,21 @@ function toDate(val: unknown): Date {
   return d;
 }
 
+function parseCostInput(body: { name?: string; amount?: unknown; date?: unknown }) {
+  if (!body.name?.trim()) {
+    return { error: 'Cost name required' };
+  }
+  const amount = Number(body.amount);
+  if (!Number.isFinite(amount)) {
+    return { error: 'Valid amount required' };
+  }
+  const date = new Date(body.date as string);
+  if (Number.isNaN(date.getTime())) {
+    return { error: 'Valid date required' };
+  }
+  return { data: { name: body.name.trim(), amount, date } };
+}
+
 // GET /api/clients
 router.get('/', h(async (req: AuthRequest, res: Response) => {
   const { search, status, service, archived } = req.query;
@@ -46,10 +61,49 @@ router.get('/:id', h(async (req: AuthRequest, res: Response) => {
       payments: { orderBy: { date: 'desc' }, take: 10 },
       tasks: { include: { assignedTo: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, take: 10 },
       activityLogs: { include: { user: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, take: 20 },
+      costs: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] },
     },
   });
   if (!client) { res.status(404).json({ message: 'Client not found' }); return; }
   res.json(client);
+}));
+
+// POST /api/clients/:id/costs — add a cost for this client from the admin app
+router.post('/:id/costs', h(async (req: AuthRequest, res: Response) => {
+  const parsed = parseCostInput(req.body);
+  if ('error' in parsed) {
+    res.status(400).json({ message: parsed.error });
+    return;
+  }
+
+  const client = await prisma.client.findUnique({
+    where: { id: req.params.id },
+    select: { id: true },
+  });
+  if (!client) {
+    res.status(404).json({ message: 'Client not found' });
+    return;
+  }
+
+  const cost = await prisma.clientCost.create({
+    data: {
+      clientId: req.params.id,
+      ...parsed.data,
+    },
+  });
+
+  res.status(201).json(cost);
+}));
+
+// DELETE /api/clients/:id/costs/:costId
+router.delete('/:id/costs/:costId', h(async (req: AuthRequest, res: Response) => {
+  await prisma.clientCost.delete({
+    where: {
+      id: req.params.costId,
+      clientId: req.params.id,
+    },
+  });
+  res.json({ message: 'Cost deleted' });
 }));
 
 // POST /api/clients

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, FolderOpen, Edit2, DollarSign, CheckSquare, Users, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FolderOpen, Edit2, DollarSign, CheckSquare, Users, Plus, Trash2, Receipt } from 'lucide-react';
 import api from '@/lib/api';
-import { Client, User } from '@/types';
+import { Client, ClientCost, User } from '@/types';
 import { formatCurrency, formatDate, getServiceLabel, getStatusColor, cn } from '@/lib/utils';
 import ClientModal from './ClientModal';
 
-type Tab = 'overview' | 'closers';
+type Tab = 'overview' | 'costs' | 'closers';
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +14,10 @@ export default function ClientDetail() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
+
+  // Costs state
+  const [costForm, setCostForm] = useState({ name: '', amount: '', date: '' });
+  const [costLoading, setCostLoading] = useState(false);
 
   // Closers state
   const [closers, setClosers] = useState<(User & { assignedAt: string })[]>([]);
@@ -67,6 +71,28 @@ export default function ClientDetail() {
     setClosers(c => c.filter(x => x.id !== userId));
   };
 
+  const addCost = async () => {
+    if (!id || !costForm.name.trim() || !costForm.amount || !costForm.date) return;
+    setCostLoading(true);
+    try {
+      const { data } = await api.post<ClientCost>(`/clients/${id}/costs`, {
+        name: costForm.name.trim(),
+        amount: Number(costForm.amount),
+        date: costForm.date,
+      });
+      setClient(c => c ? { ...c, costs: [data, ...((c as Client & { costs?: ClientCost[] }).costs || [])] } as Client : c);
+      setCostForm({ name: '', amount: '', date: '' });
+    } finally {
+      setCostLoading(false);
+    }
+  };
+
+  const deleteCost = async (costId: string) => {
+    if (!id) return;
+    await api.delete(`/clients/${id}/costs/${costId}`);
+    setClient(c => c ? { ...c, costs: ((c as Client & { costs?: ClientCost[] }).costs || []).filter(cost => cost.id !== costId) } as Client : c);
+  };
+
   if (loading) return (
     <div className="flex justify-center py-12">
       <div className="w-6 h-6 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
@@ -77,6 +103,8 @@ export default function ClientDetail() {
   const payments = (client as any).payments || [];
   const tasks = (client as any).tasks || [];
   const logs = (client as any).activityLogs || [];
+  const costs = ((client as Client & { costs?: ClientCost[] }).costs || []);
+  const totalCosts = costs.reduce((sum, cost) => sum + Number(cost.amount || 0), 0);
 
   const assignableUsers = allUsers.filter(u => !closers.some(c => c.id === u.id));
 
@@ -151,6 +179,7 @@ export default function ClientDetail() {
       <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 w-fit">
         {([
           { key: 'overview', label: 'Overview', icon: DollarSign },
+          { key: 'costs', label: 'Costs', icon: Receipt },
           { key: 'closers', label: 'Assigned Closers', icon: Users },
         ] as { key: Tab; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
           <button
@@ -236,6 +265,109 @@ export default function ClientDetail() {
             </div>
           )}
         </>
+      )}
+
+      {/* Costs tab */}
+      {tab === 'costs' && (
+        <div className="space-y-6">
+          <div className="card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-amber-500" /> Client Costs
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Add costs for this client from the admin account.
+                </p>
+              </div>
+              <div className="text-sm font-bold text-slate-900 dark:text-white">
+                Total {formatCurrency(totalCosts, client.preferredCurrency)}
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-[1fr_160px_160px_auto] gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Cost Name</label>
+                <input
+                  className="input"
+                  placeholder="e.g. Ads, Tools, Freelancer"
+                  value={costForm.name}
+                  onChange={e => setCostForm(f => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Amount</label>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0"
+                  value={costForm.amount}
+                  onChange={e => setCostForm(f => ({ ...f, amount: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Date</label>
+                <input
+                  className="input"
+                  type="date"
+                  value={costForm.date}
+                  onChange={e => setCostForm(f => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={addCost}
+                  disabled={costLoading || !costForm.name.trim() || !costForm.amount || !costForm.date}
+                  className="btn-primary w-full sm:w-auto px-4"
+                >
+                  {costLoading
+                    ? <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : <Plus className="w-4 h-4" />}
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Saved Costs ({costs.length})
+              </h3>
+            </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {costs.length === 0 ? (
+                <div className="px-5 py-10 text-center text-slate-400">
+                  <Receipt className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No costs yet</p>
+                </div>
+              ) : (
+                costs.map(cost => (
+                  <div key={cost.id} className="px-5 py-4 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">{cost.name}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{formatDate(cost.date)}</div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                        {formatCurrency(Number(cost.amount), client.preferredCurrency)}
+                      </div>
+                      <button
+                        onClick={() => deleteCost(cost.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        aria-label="Delete cost"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Closers tab */}

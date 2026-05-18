@@ -31,6 +31,56 @@ function calcNetProfit(order: {
   );
 }
 
+function getPresetRange(datePreset: string) {
+  const days =
+    datePreset === "today"
+      ? 1
+      : datePreset === "last_7d"
+        ? 7
+        : datePreset === "last_30d"
+          ? 30
+          : 90;
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+}
+
+async function getClientKpiSpend(clientId: string, datePreset: string) {
+  const linkedCostSpend = await getClientCostsSpend(clientId, datePreset);
+  if (linkedCostSpend > 0) return linkedCostSpend;
+
+  const config = await prisma.clientKpiConfig.findUnique({ where: { clientId } });
+  if (config?.metaToken && config?.metaAdAccountId) {
+    try {
+      const url = `https://graph.facebook.com/v19.0/act_${config.metaAdAccountId}/insights?fields=spend&date_preset=${datePreset}&level=account&access_token=${config.metaToken}`;
+      const metaRes = await fetch(url);
+      const metaData: any = await metaRes.json();
+      if (!metaData.error) {
+        return parseFloat(metaData.data?.[0]?.spend || 0);
+      }
+    } catch (err: any) {
+      console.error("Meta Ads spend lookup failed:", err.message);
+    }
+  }
+
+  return 0;
+}
+
+async function getClientCostsSpend(clientId: string | undefined, datePreset: string) {
+  const range = datePreset === "all_time" ? null : getPresetRange(datePreset);
+  const costs = await prisma.clientCost.aggregate({
+    where: {
+      ...(clientId ? { clientId } : {}),
+      ...(range ? { date: { gte: range.start, lte: range.end } } : {}),
+    },
+    _sum: { amount: true },
+  });
+  return costs._sum.amount || 0;
+}
+
 async function calcCommission(
   closerId: string,
   clientId: string,
@@ -868,7 +918,7 @@ router.get(
 router.get(
   "/analytics",
   h(async (req, res) => {
-    const { clientId, from, to } = req.query;
+    const { clientId, from, to, datePreset } = req.query;
     const where: Record<string, unknown> = {};
     if (clientId) where.clientId = clientId;
     if (from || to) {
@@ -906,11 +956,14 @@ router.get(
       (s: number, o: any) => s + o.orderAmount,
       0,
     );
-    const totalNetProfit = orders.reduce(
-      (s: number, o: any) => s + o.netProfit,
-      0,
+    const orderAdSpend = orders.reduce((s: number, o: any) => s + o.adCost, 0);
+    const linkedCostSpend = await getClientCostsSpend(
+      clientId ? (clientId as string) : undefined,
+      (datePreset as string) || "all_time",
     );
-    const totalAdSpend = orders.reduce((s: number, o: any) => s + o.adCost, 0);
+    const totalAdSpend = clientId
+      ? await getClientKpiSpend(clientId as string, (datePreset as string) || "all_time")
+      : linkedCostSpend || orderAdSpend;
     const totalProductCost = orders.reduce(
       (s: number, o: any) => s + o.productCost,
       0,
@@ -919,6 +972,12 @@ router.get(
       (s: number, o: any) => s + o.shippingCost,
       0,
     );
+    const totalOrderCommissions = orders.reduce(
+      (s: number, o: any) => s + o.closerCommission,
+      0,
+    );
+    const totalNetProfit =
+      totalRevenue - totalProductCost - totalShipping - totalAdSpend - totalOrderCommissions;
     const confirmed = orders.filter(
       (o: any) => o.status === "CONFIRMED" || o.status === "DELIVERED",
     ).length;

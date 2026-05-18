@@ -217,6 +217,7 @@ export interface Client {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
+  costs?: ClientCost[];
   _count?: { payments: number; tasks: number };
 }
 
