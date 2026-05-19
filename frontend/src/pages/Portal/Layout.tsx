@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   BarChart2,
@@ -42,7 +42,13 @@ function PortalLayoutContent() {
   const { user, logout } = usePortalAuth();
   const { currency, setCurrency } = usePortalCurrency();
   const navigate = useNavigate();
+  const location = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [location.pathname]);
   const [profileOpen, setProfileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
@@ -310,8 +316,8 @@ function PortalLayoutContent() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6 overflow-auto">
-          <Outlet />
+        <main ref={mainRef} className="flex-1 p-6 overflow-auto">
+          <Outlet key={location.pathname} />
         </main>
       </div>
 

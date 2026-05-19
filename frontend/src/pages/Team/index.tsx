@@ -94,7 +94,14 @@ export default function TeamManagement() {
   async function handleSaveUser(payload: Partial<User> & { password?: string }) {
     try {
       if (modalUser) {
-        await api.put(`/users/${modalUser.id}`, payload);
+        const { role, password, ...profileData } = payload;
+        await api.put(`/users/${modalUser.id}`, profileData);
+        if (role && role !== modalUser.role) {
+          await api.put(`/users/${modalUser.id}/role`, { role });
+        }
+        if (password) {
+          await api.post(`/users/${modalUser.id}/reset-password`, { newPassword: password });
+        }
         toast('User updated successfully');
       } else {
         await api.post('/users', payload);

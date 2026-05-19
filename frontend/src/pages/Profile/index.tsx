@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   User, Mail, Phone, Lock, Upload, Eye, EyeOff,
   Check, Camera, Shield, Clock, Calendar,
@@ -47,6 +47,16 @@ export default function Profile() {
   const [showPwd, setShowPwd] = useState({ current: false, next: false, confirm: false });
   const [pwdSaving, setPwdSaving] = useState(false);
   const [pwdErrors, setPwdErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!user) return;
+    setInfo({
+      name: user.name ?? '',
+      email: user.email ?? '',
+      phone: user.phone ?? '',
+      avatar: user.avatar ?? '',
+    });
+  }, [user?.id, user?.name, user?.email, user?.phone, user?.avatar]);
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type });
@@ -119,7 +129,13 @@ export default function Profile() {
     }
   }
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
@@ -247,17 +263,36 @@ export default function Profile() {
                 <p className="text-xs text-slate-400 mt-1">Contact an admin to change your email</p>
               </div>
             </div>
-            <div>
-              <label className="label">Phone Number <span className="text-slate-400">(optional)</span></label>
-              <div className="relative mt-1">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="tel"
-                  className="input pl-9"
-                  value={info.phone}
-                  onChange={e => setInfo(f => ({ ...f, phone: e.target.value }))}
-                  placeholder="+212 600 000 000"
-                />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label className="label">Phone Number <span className="text-slate-400">(optional)</span></label>
+                <div className="relative mt-1">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="tel"
+                    className="input pl-9"
+                    value={info.phone}
+                    onChange={e => setInfo(f => ({ ...f, phone: e.target.value }))}
+                    placeholder="+212 600 000 000"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="label">Role</label>
+                <div className="relative mt-1">
+                  <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <select
+                    className="input pl-9 appearance-none cursor-not-allowed opacity-80"
+                    value={user.role}
+                    disabled
+                    title="Contact an admin to change your role"
+                  >
+                    {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Contact an admin to change your role</p>
               </div>
             </div>
 
