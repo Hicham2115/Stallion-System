@@ -6,6 +6,72 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+const USER_PUBLIC_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  avatar: true,
+  phone: true,
+  suspended: true,
+} as const;
+
+async function canSelfRegister(): Promise<boolean> {
+  const superAdminCount = await prisma.user.count({ where: { role: 'SUPER_ADMIN' } });
+  return superAdminCount === 0;
+}
+
+// GET /api/auth/setup-status — whether admin self-registration is open
+router.get('/setup-status', async (_req: Request, res: Response): Promise<void> => {
+  res.json({ registrationAvailable: await canSelfRegister() });
+});
+
+// POST /api/auth/register — create first super-admin (open until one exists)
+router.post('/register', async (req: Request, res: Response): Promise<void> => {
+  if (!(await canSelfRegister())) {
+    res.status(403).json({
+      message: 'Admin registration is closed. Sign in with your account or ask an administrator to invite you.',
+    });
+    return;
+  }
+
+  const { name, email, password } = req.body;
+  if (!name?.trim() || !email?.trim() || !password) {
+    res.status(400).json({ message: 'Name, email, and password are required' });
+    return;
+  }
+  if (password.length < 8) {
+    res.status(400).json({ message: 'Password must be at least 8 characters' });
+    return;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  if (existing) {
+    res.status(409).json({ message: 'Email already in use' });
+    return;
+  }
+
+  const hashed = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: {
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashed,
+      role: 'SUPER_ADMIN',
+    },
+    select: USER_PUBLIC_SELECT,
+  });
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLogin: new Date() },
+  });
+
+  const token = signToken({ userId: user.id, email: user.email, role: user.role });
+  res.status(201).json({ token, user });
+});
+
 // POST /api/auth/login
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   const { email, password } = req.body;

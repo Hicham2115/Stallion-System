@@ -382,6 +382,7 @@ async function main() {
   console.log('Admin login:  ceo@stallion.com / admin123');
   console.log('Member login: sara@stallion.com / member123');
   console.log('─────────────────────────────────');
+  console.log('Tip: To create your own admin instead, skip seed and open /register on a fresh database.');
 }
 
 main()

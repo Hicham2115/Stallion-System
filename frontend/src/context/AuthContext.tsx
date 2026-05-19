@@ -23,6 +23,7 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   updateUser: (user: User) => void;
   isSuperAdmin: boolean;
@@ -77,6 +78,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: data.user, token: data.token, isLoading: false });
   };
 
+  const register = async (name: string, email: string, password: string) => {
+    const { data } = await api.post<{ token: string; user: User }>(
+      "/auth/register",
+      { name, email, password },
+    );
+    localStorage.setItem("stallion_token", data.token);
+    setState({ user: data.user, token: data.token, isLoading: false });
+  };
+
   const logout = () => {
     localStorage.removeItem("stallion_token");
     setState({ user: null, token: null, isLoading: false });
@@ -94,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         ...state,
         login,
+        register,
         logout,
         updateUser,
         isSuperAdmin: userRole === "SUPER_ADMIN",

@@ -4,6 +4,7 @@ import { usePortalAuth } from "@/context/PortalAuthContext";
 import { ChatProvider } from "@/context/ChatContext";
 import Layout from "@/components/Layout";
 import Login from "@/pages/Login";
+import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
 import Clients from "@/pages/Clients";
 import ClientDetail from "@/pages/Clients/ClientDetail";
@@ -45,13 +46,6 @@ function Spinner() {
   );
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
-  if (isLoading) return <Spinner />;
-  if (!user) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
-
 function ManagerRoute({ children }: { children: React.ReactNode }) {
   const { isManager, isLoading } = useAuth();
   if (isLoading) return null;
@@ -74,122 +68,15 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const { user: portalUser } = usePortalAuth();
+
+  if (isLoading) return <Spinner />;
 
   return (
     <ChatProvider>
       <Routes>
-        {/* Agency App */}
-        <Route
-          path="/login"
-          element={user ? <Navigate to="/" replace /> : <Login />}
-        />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route
-            index
-            element={
-              <ManagerRoute>
-                <Dashboard />
-              </ManagerRoute>
-            }
-          />
-          <Route
-            path="clients"
-            element={
-              <ManagerRoute>
-                <Clients />
-              </ManagerRoute>
-            }
-          />
-          <Route
-            path="clients/:id"
-            element={
-              <ManagerRoute>
-                <ClientDetail />
-              </ManagerRoute>
-            }
-          />
-          <Route
-            path="revenue"
-            element={
-              <ManagerRoute>
-                <Revenue />
-              </ManagerRoute>
-            }
-          />
-          <Route
-            path="expenses"
-            element={
-              <ManagerRoute>
-                <Expenses />
-              </ManagerRoute>
-            }
-          />
-          <Route
-            path="leads"
-            element={
-              <ManagerRoute>
-                <Leads />
-              </ManagerRoute>
-            }
-          />
-          <Route path="tasks" element={<Tasks />} />
-          <Route path="my-orders" element={<MyOrders />} />
-          <Route path="meetings" element={<Meetings />} />
-          <Route
-            path="crm"
-            element={
-              <ManagerRoute>
-                <CRM />
-              </ManagerRoute>
-            }
-          />
-          <Route path="chat" element={<Chat />} />
-          <Route path="chat/:type/:id" element={<Chat />} />
-          <Route path="profile" element={<Profile />} />
-          <Route
-            path="team"
-            element={
-              <AdminRoute>
-                <Team />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="settings/services"
-            element={
-              <AdminRoute>
-                <ServicesSettings />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="portal-admin"
-            element={
-              <ManagerRoute>
-                <PortalClientsPage />
-              </ManagerRoute>
-            }
-          />
-          <Route
-            path="portal-admin/:clientId"
-            element={
-              <ManagerRoute>
-                <ClientPortalDetail />
-              </ManagerRoute>
-            }
-          />
-        </Route>
-
-        {/* Client Portal */}
+        {/* Client Portal (always available) */}
         <Route
           path="/portal/login"
           element={
@@ -215,7 +102,116 @@ export default function App() {
           <Route path="profile" element={<PortalProfile />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {!user ? (
+          <>
+            <Route path="/" element={<Register />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        ) : (
+          <>
+            <Route path="/login" element={<Navigate to="/" replace />} />
+            <Route path="/register" element={<Navigate to="/" replace />} />
+            <Route path="/" element={<Layout />}>
+              <Route
+                index
+                element={
+                  <ManagerRoute>
+                    <Dashboard />
+                  </ManagerRoute>
+                }
+              />
+              <Route
+                path="clients"
+                element={
+                  <ManagerRoute>
+                    <Clients />
+                  </ManagerRoute>
+                }
+              />
+              <Route
+                path="clients/:id"
+                element={
+                  <ManagerRoute>
+                    <ClientDetail />
+                  </ManagerRoute>
+                }
+              />
+              <Route
+                path="revenue"
+                element={
+                  <ManagerRoute>
+                    <Revenue />
+                  </ManagerRoute>
+                }
+              />
+              <Route
+                path="expenses"
+                element={
+                  <ManagerRoute>
+                    <Expenses />
+                  </ManagerRoute>
+                }
+              />
+              <Route
+                path="leads"
+                element={
+                  <ManagerRoute>
+                    <Leads />
+                  </ManagerRoute>
+                }
+              />
+              <Route path="tasks" element={<Tasks />} />
+              <Route path="my-orders" element={<MyOrders />} />
+              <Route path="meetings" element={<Meetings />} />
+              <Route
+                path="crm"
+                element={
+                  <ManagerRoute>
+                    <CRM />
+                  </ManagerRoute>
+                }
+              />
+              <Route path="chat" element={<Chat />} />
+              <Route path="chat/:type/:id" element={<Chat />} />
+              <Route path="profile" element={<Profile />} />
+              <Route
+                path="team"
+                element={
+                  <AdminRoute>
+                    <Team />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="settings/services"
+                element={
+                  <AdminRoute>
+                    <ServicesSettings />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="portal-admin"
+                element={
+                  <ManagerRoute>
+                    <PortalClientsPage />
+                  </ManagerRoute>
+                }
+              />
+              <Route
+                path="portal-admin/:clientId"
+                element={
+                  <ManagerRoute>
+                    <ClientPortalDetail />
+                  </ManagerRoute>
+                }
+              />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        )}
       </Routes>
     </ChatProvider>
   );
