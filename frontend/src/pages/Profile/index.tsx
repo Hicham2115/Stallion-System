@@ -129,16 +129,10 @@ export default function Profile() {
     }
   }
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-[40vh]">
-        <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (!user) return null;
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6 w-full">
 
       {/* Toast */}
       {toast && (
@@ -285,14 +279,12 @@ export default function Profile() {
                     className="input pl-9 appearance-none cursor-not-allowed opacity-80"
                     value={user.role}
                     disabled
-                    title="Contact an admin to change your role"
                   >
                     {Object.entries(ROLE_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Contact an admin to change your role</p>
               </div>
             </div>
 

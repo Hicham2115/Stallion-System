@@ -1,16 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const location = useLocation();
-  const mainRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    mainRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [location.pathname]);
 
   return (
     <div className="h-screen flex overflow-hidden">
@@ -24,10 +18,12 @@ export default function Layout() {
 
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main ref={mainRef} className="flex-1 overflow-y-auto p-4 md:p-6">
-          <Outlet key={location.pathname} />
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 md:p-6">
+          <div className="w-full min-h-full">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

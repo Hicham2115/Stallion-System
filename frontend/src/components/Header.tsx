@@ -226,7 +226,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-2 ml-1 pl-3 border-l border-slate-200 dark:border-slate-700">
-          <Link to="/profile" title="My Profile">
+          <Link
+            to="/profile"
+            title="My Profile"
+            onClick={() => {
+              requestAnimationFrame(() => {
+                const main = document.querySelector('main');
+                if (main) main.scrollTop = 0;
+              });
+            }}
+          >
             {user?.avatar ? (
               <img
                 src={user.avatar}
@@ -249,6 +258,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
             to="/profile"
             className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors ml-0.5"
             title="My Profile"
+            onClick={() => {
+              requestAnimationFrame(() => {
+                const main = document.querySelector('main');
+                if (main) main.scrollTop = 0;
+              });
+            }}
           >
             <UserCircle className="w-4 h-4" />
           </Link>

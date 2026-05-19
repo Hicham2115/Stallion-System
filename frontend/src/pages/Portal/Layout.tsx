@@ -16,7 +16,7 @@ import {
   ShoppingCart,
   Receipt,
 } from "lucide-react";
-import stallionLogo from "@/assets/png.png";
+import SidebarBrand from "@/components/SidebarBrand";
 import { cn } from "@/lib/utils";
 import { usePortalAuth, portalApi } from "@/context/PortalAuthContext";
 import {
@@ -87,16 +87,7 @@ function PortalLayoutContent() {
       >
         {/* Logo */}
         <div className="flex items-center justify-between h-16 px-5 border-b border-slate-800/60">
-          <div className="flex items-center gap-2.5">
-            <img
-              src={stallionLogo}
-              alt="Stallion Advertising"
-              className="h-9 w-auto object-contain"
-            />
-            <div className="text-[10px] text-amber-400 font-medium tracking-widest uppercase">
-              Client Portal
-            </div>
-          </div>
+          <SidebarBrand />
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-slate-500 hover:text-white"
@@ -164,7 +155,7 @@ function PortalLayoutContent() {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         {/* Top header */}
         <header className="h-16 flex items-center justify-between px-5 border-b border-slate-800/60 bg-[#080d1c]/80 backdrop-blur-sm sticky top-0 z-50">
           <button
@@ -316,8 +307,10 @@ function PortalLayoutContent() {
         </header>
 
         {/* Page content */}
-        <main ref={mainRef} className="flex-1 p-6 overflow-auto">
-          <Outlet key={location.pathname} />
+        <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6">
+          <div className="w-full min-h-full">
+            <Outlet />
+          </div>
         </main>
       </div>
 
