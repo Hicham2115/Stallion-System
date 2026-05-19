@@ -541,11 +541,12 @@ router.get(
               name: string;
               email: string;
               avatar: string | null;
+              phone: string | null;
               role: string;
               isCloser: boolean;
             }[]
           >`
-        SELECT id, name, email, avatar, role, "isCloser" FROM users
+        SELECT id, name, email, avatar, phone, role, "isCloser" FROM users
         WHERE active = true AND suspended = false AND "isCloser" = true ORDER BY name ASC`
         : await prisma.$queryRaw<
             {
@@ -553,11 +554,12 @@ router.get(
               name: string;
               email: string;
               avatar: string | null;
+              phone: string | null;
               role: string;
               isCloser: boolean;
             }[]
           >`
-        SELECT id, name, email, avatar, role, "isCloser" FROM users
+        SELECT id, name, email, avatar, phone, role, "isCloser" FROM users
         WHERE active = true AND suspended = false ORDER BY name ASC`;
     const stats = await Promise.all(
       users.map(async (u) => {

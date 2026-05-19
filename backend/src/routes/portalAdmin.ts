@@ -6,6 +6,82 @@ import { authenticate, requireRole, AuthRequest } from "../middleware/auth";
 const router = Router();
 router.use(authenticate, requireRole("MANAGER"));
 
+function normalizeShopifyStoreUrl(storeUrl: string) {
+  return storeUrl
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .toLowerCase();
+}
+
+async function syncShopifyOrders(config: any) {
+  const url = `https://${config.storeUrl}/admin/api/2024-01/orders.json?limit=250&status=any`;
+  const resp = await fetch(url, {
+    headers: {
+      "X-Shopify-Access-Token": config.accessToken,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Shopify API error: ${resp.status}`);
+  }
+
+  const data = (await resp.json()) as { orders: any[] };
+  const shopifyOrders = data.orders || [];
+  let created = 0;
+  let updated = 0;
+
+  for (const o of shopifyOrders) {
+    const existing = await (prisma as any).crmOrder.findFirst({
+      where: { shopifyOrderId: String(o.id), shopifyStore: config.storeUrl },
+    });
+    const lineItem = o.line_items?.[0] || {};
+    const addr = o.shipping_address || o.billing_address || {};
+    const orderData = {
+      clientId: config.clientId,
+      shopifyOrderId: String(o.id),
+      shopifyStore: config.storeUrl,
+      customerName:
+        `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim() ||
+        o.email ||
+        "Unknown",
+      customerPhone: o.customer?.phone || addr.phone || null,
+      customerCity: addr.city || null,
+      productName: lineItem.name || "Shopify Order",
+      quantity: lineItem.quantity || 1,
+      orderAmount: parseFloat(o.total_price || "0"),
+      status: o.cancelled_at
+        ? "CANCELLED"
+        : o.fulfillment_status === "fulfilled"
+          ? "DELIVERED"
+          : ("NEW" as any),
+      paymentStatus: o.financial_status === "paid" ? "PAID" : ("COD_PENDING" as any),
+      source: "OTHER" as any,
+    };
+
+    if (existing) {
+      await (prisma as any).crmOrder.update({
+        where: { id: existing.id },
+        data: orderData,
+      });
+      updated++;
+    } else {
+      await (prisma as any).crmOrder.create({
+        data: { ...orderData, netProfit: orderData.orderAmount },
+      });
+      created++;
+    }
+  }
+
+  await (prisma as any).shopifyConfig.update({
+    where: { id: config.id },
+    data: { lastSyncAt: new Date() },
+  });
+
+  return { message: "Sync complete", created, updated, total: shopifyOrders.length };
+}
+
 // GET /api/portal-admin — list clients with portal status
 router.get("/", async (_req: AuthRequest, res: Response): Promise<void> => {
   const clients = await prisma.client.findMany({
@@ -386,6 +462,94 @@ router.put(
       },
     });
     res.json({ message: "KPI config saved" });
+  },
+);
+
+// GET /api/portal-admin/:clientId/shopify — client Shopify connections
+router.get(
+  "/:clientId/shopify",
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const configs = await (prisma as any).shopifyConfig.findMany({
+      where: { clientId: req.params.clientId },
+      include: { client: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(configs);
+  },
+);
+
+// POST /api/portal-admin/:clientId/shopify — connect Shopify store
+router.post(
+  "/:clientId/shopify",
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const { storeName, storeUrl, accessToken } = req.body;
+    if (!storeName || !storeUrl || !accessToken) {
+      res
+        .status(400)
+        .json({ message: "storeName, storeUrl, accessToken are required" });
+      return;
+    }
+
+    const config = await (prisma as any).shopifyConfig.create({
+      data: {
+        clientId: req.params.clientId,
+        storeName,
+        storeUrl: normalizeShopifyStoreUrl(storeUrl),
+        accessToken,
+      },
+      include: { client: { select: { id: true, name: true } } },
+    });
+    res.status(201).json(config);
+  },
+);
+
+// PUT /api/portal-admin/shopify/:id — update Shopify connection
+router.put(
+  "/shopify/:id",
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const { storeName, storeUrl, accessToken, active } = req.body;
+    const config = await (prisma as any).shopifyConfig.update({
+      where: { id: req.params.id },
+      data: {
+        storeName: storeName || undefined,
+        storeUrl: storeUrl ? normalizeShopifyStoreUrl(storeUrl) : undefined,
+        accessToken: accessToken || undefined,
+        active: active !== undefined ? active : undefined,
+      },
+      include: { client: { select: { id: true, name: true } } },
+    });
+    res.json(config);
+  },
+);
+
+// DELETE /api/portal-admin/shopify/:id — remove Shopify connection
+router.delete(
+  "/shopify/:id",
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    await (prisma as any).shopifyConfig.delete({
+      where: { id: req.params.id },
+    });
+    res.json({ message: "Deleted" });
+  },
+);
+
+// POST /api/portal-admin/shopify/:id/sync — import Shopify orders into CRM orders
+router.post(
+  "/shopify/:id/sync",
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const config = await (prisma as any).shopifyConfig.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!config) {
+      res.status(404).json({ message: "Config not found" });
+      return;
+    }
+
+    try {
+      res.json(await syncShopifyOrders(config));
+    } catch (err: any) {
+      res.status(502).json({ message: err.message || "Failed to connect to Shopify" });
+    }
   },
 );
 

@@ -28,68 +28,6 @@ import {
 
 const RANK_COLORS = ["#f59e0b", "#94a3b8", "#92400e", "#6366f1", "#10b981"];
 
-function CommissionBreakdown({
-  closer,
-  fmt,
-}: {
-  closer: Pick<
-    CloserStat,
-    | "commissionTotal"
-    | "agencyCommissionTotal"
-    | "closerCommissionTotal"
-    | "commissionPaid"
-    | "commissionUnpaid"
-  >;
-  fmt: (amount: number) => string;
-}) {
-  const total = closer.commissionTotal ?? 0;
-  const agency = closer.agencyCommissionTotal ?? 0;
-  const closerTotal = closer.closerCommissionTotal ?? 0;
-  const paid = closer.commissionPaid ?? 0;
-  const unpaid = closer.commissionUnpaid ?? 0;
-
-  if (total <= 0 && closerTotal <= 0 && paid <= 0 && unpaid <= 0)
-    return <span>—</span>;
-
-  const rowCls = "flex items-center justify-between gap-3";
-  const labelCls = "text-[11px] text-slate-500";
-  const valueCls =
-    "text-[11px] font-semibold text-slate-700 dark:text-slate-200";
-
-  return (
-    <div className="min-w-[180px] rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-2">
-      <div className={rowCls}>
-        <span className={labelCls}>Total Commission</span>
-        <span className={valueCls}>{fmt(total)}</span>
-      </div>
-      <div className={rowCls}>
-        <span className={labelCls}>Agency</span>
-        <span className={valueCls + " text-emerald-600 dark:text-emerald-400"}>
-          {fmt(agency)}
-        </span>
-      </div>
-      <div className={rowCls}>
-        <span className={labelCls}>Closer</span>
-        <span className={valueCls + " text-amber-600 dark:text-amber-400"}>
-          {fmt(closerTotal)}
-        </span>
-      </div>
-      <div className={rowCls}>
-        <span className={labelCls}>Paid</span>
-        <span className={valueCls + " text-emerald-600 dark:text-emerald-400"}>
-          {fmt(paid)}
-        </span>
-      </div>
-      <div className={rowCls}>
-        <span className={labelCls}>Unpaid</span>
-        <span className={valueCls + " text-slate-500 dark:text-slate-400"}>
-          {fmt(unpaid)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export default function Closers() {
   const { fmt } = useCrmCurrency();
   const [view, setView] = useState<"performance" | "team">("performance");
@@ -378,9 +316,6 @@ export default function Closers() {
                     </div>
                     <div className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
                       {fmt(c.totalEarnings)} earned
-                    </div>
-                    <div className="mt-2 flex justify-center">
-                      <CommissionBreakdown closer={c} fmt={fmt} />
                     </div>
                   </div>
                 ))}

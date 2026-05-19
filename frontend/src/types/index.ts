@@ -117,6 +117,7 @@ export interface CloserStat {
   name: string;
   email: string;
   avatar?: string;
+  phone?: string | null;
   role: string;
   isCloser: boolean;
   totalOrders: number;

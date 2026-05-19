@@ -14,6 +14,8 @@ import {
   Key,
   Copy,
   ExternalLink,
+  RefreshCw,
+  Store,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -27,6 +29,7 @@ import {
   ProjectPhase,
   Currency,
   ClientCost,
+  ShopifyConfig,
 } from "@/types";
 
 interface PortalUserInfo {
@@ -51,9 +54,21 @@ const TABS = [
   "Updates",
   "Content",
   "KPI Config",
+  "Shopify",
   "Notifications",
 ] as const;
 type Tab = (typeof TABS)[number];
+
+interface SyncResult {
+  message: string;
+  created: number;
+  updated: number;
+  total: number;
+}
+
+function isSyncResult(result: SyncResult | { message: string }): result is SyncResult {
+  return "total" in result && "created" in result && "updated" in result;
+}
 
 const PHASE_OPTS: ProjectPhase[] = [
   "DISCOVERY",
@@ -191,6 +206,21 @@ export default function ClientPortalDetail() {
   const [kpiHasToken, setKpiHasToken] = useState(false);
   const [kpiLoading, setKpiLoading] = useState(false);
 
+  // Shopify config
+  const [shopifyConfigs, setShopifyConfigs] = useState<ShopifyConfig[]>([]);
+  const [shopifyForm, setShopifyForm] = useState({
+    storeName: "",
+    storeUrl: "",
+    accessToken: "",
+  });
+  const [shopifyHasToken, setShopifyHasToken] = useState(false);
+  const [shopifyLoading, setShopifyLoading] = useState(false);
+  const [shopifySyncing, setShopifySyncing] = useState<string | null>(null);
+  const [shopifySyncResult, setShopifySyncResult] = useState<{
+    id: string;
+    result: SyncResult | { message: string };
+  } | null>(null);
+
   // Reset password form
   const [resetPassword, setResetPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
@@ -225,14 +255,24 @@ export default function ClientPortalDetail() {
       api.get<{ metaAdAccountId: string | null; hasToken: boolean }>(
         `/portal-admin/${clientId}/kpi-config`,
       ),
+      api.get<ShopifyConfig[]>(`/portal-admin/${clientId}/shopify`),
     ])
-      .then(([detailRes, kpiRes]) => {
+      .then(([detailRes, kpiRes, shopifyRes]) => {
         setData(detailRes.data);
         setKpiForm((f) => ({
           ...f,
           metaAdAccountId: kpiRes.data.metaAdAccountId ?? "",
         }));
         setKpiHasToken(kpiRes.data.hasToken);
+        setShopifyConfigs(shopifyRes.data);
+        setShopifyHasToken(shopifyRes.data.some((config) => !!config.accessToken));
+        if (shopifyRes.data[0]) {
+          setShopifyForm((form) => ({
+            ...form,
+            storeName: shopifyRes.data[0].storeName,
+            storeUrl: shopifyRes.data[0].storeUrl,
+          }));
+        }
       })
       .finally(() => setLoading(false));
   };
@@ -364,6 +404,83 @@ export default function ClientPortalDetail() {
     } finally {
       setKpiLoading(false);
     }
+  };
+
+  const saveShopify = async () => {
+    if (!clientId) return;
+    if (!shopifyForm.storeName || !shopifyForm.storeUrl) return;
+    if (!shopifyHasToken && !shopifyForm.accessToken) return;
+
+    setShopifyLoading(true);
+    try {
+      if (shopifyConfigs[0]) {
+        const { data } = await api.put<ShopifyConfig>(
+          `/portal-admin/shopify/${shopifyConfigs[0].id}`,
+          shopifyForm,
+        );
+        setShopifyConfigs((configs) =>
+          configs.map((config) => (config.id === data.id ? data : config)),
+        );
+        setShopifyHasToken(true);
+      } else {
+        const { data } = await api.post<ShopifyConfig>(
+          `/portal-admin/${clientId}/shopify`,
+          shopifyForm,
+        );
+        setShopifyConfigs([data]);
+        setShopifyHasToken(true);
+      }
+      setShopifyForm((form) => ({ ...form, accessToken: "" }));
+      showToast("Shopify connection saved!");
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Failed to save Shopify", false);
+    } finally {
+      setShopifyLoading(false);
+    }
+  };
+
+  const syncShopify = async (config: ShopifyConfig) => {
+    setShopifySyncing(config.id);
+    setShopifySyncResult(null);
+    try {
+      const { data } = await api.post<SyncResult>(
+        `/portal-admin/shopify/${config.id}/sync`,
+      );
+      setShopifySyncResult({ id: config.id, result: data });
+      setShopifyConfigs((configs) =>
+        configs.map((item) =>
+          item.id === config.id
+            ? { ...item, lastSyncAt: new Date().toISOString() }
+            : item,
+        ),
+      );
+      showToast("Shopify orders synced!");
+    } catch (err: any) {
+      const message = err.response?.data?.message || "Sync failed";
+      setShopifySyncResult({ id: config.id, result: { message } });
+      showToast(message, false);
+    } finally {
+      setShopifySyncing(null);
+    }
+  };
+
+  const toggleShopify = async (config: ShopifyConfig) => {
+    const { data } = await api.put<ShopifyConfig>(
+      `/portal-admin/shopify/${config.id}`,
+      { active: !config.active },
+    );
+    setShopifyConfigs((configs) =>
+      configs.map((item) => (item.id === data.id ? data : item)),
+    );
+  };
+
+  const deleteShopify = async (id: string) => {
+    if (!confirm("Remove this Shopify connection?")) return;
+    await api.delete(`/portal-admin/shopify/${id}`);
+    setShopifyConfigs((configs) => configs.filter((config) => config.id !== id));
+    setShopifyHasToken(false);
+    setShopifyForm({ storeName: "", storeUrl: "", accessToken: "" });
+    showToast("Shopify connection removed");
   };
 
   const saveCurrency = async (currency: Currency) => {
@@ -1119,6 +1236,221 @@ export default function ClientPortalDetail() {
             </button>
           </div>
         </Section>
+      )}
+
+      {/* Shopify */}
+      {activeTab === "Shopify" && (
+        <div className="space-y-4">
+          <Section title="Shopify Store Connection">
+            <div className="space-y-4">
+              {shopifyHasToken && (
+                <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl p-3">
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  <p className="text-xs text-green-300">
+                    Shopify token is configured. Leave the token field empty to
+                    keep the existing one.
+                  </p>
+                </div>
+              )}
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <InputField
+                  label="Store Display Name"
+                  placeholder="Brand Shopify Store"
+                  value={shopifyForm.storeName}
+                  onChange={(e) =>
+                    setShopifyForm((form) => ({
+                      ...form,
+                      storeName: e.target.value,
+                    }))
+                  }
+                />
+                <InputField
+                  label="Shopify Store Domain"
+                  placeholder="your-store.myshopify.com"
+                  value={shopifyForm.storeUrl}
+                  onChange={(e) =>
+                    setShopifyForm((form) => ({
+                      ...form,
+                      storeUrl: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <InputField
+                label={
+                  shopifyHasToken
+                    ? "Update Admin API Access Token (leave blank to keep)"
+                    : "Admin API Access Token"
+                }
+                type="password"
+                placeholder="shpat_..."
+                value={shopifyForm.accessToken}
+                onChange={(e) =>
+                  setShopifyForm((form) => ({
+                    ...form,
+                    accessToken: e.target.value,
+                  }))
+                }
+              />
+
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300 leading-relaxed">
+                Required Shopify info: the store domain, for example
+                your-store.myshopify.com, and a custom app Admin API access
+                token with read_orders and read_customers scopes. In Shopify,
+                open Settings, Apps and sales channels, Develop apps, create or
+                open a custom app, configure Admin API scopes, install it, then
+                copy the Admin API access token.
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={saveShopify}
+                  disabled={
+                    shopifyLoading ||
+                    !shopifyForm.storeName ||
+                    !shopifyForm.storeUrl ||
+                    (!shopifyHasToken && !shopifyForm.accessToken)
+                  }
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold disabled:opacity-50 transition-colors"
+                >
+                  <Store className="w-4 h-4" />
+                  {shopifyLoading ? "Saving..." : "Save Shopify Config"}
+                </button>
+                {shopifyConfigs[0] && (
+                  <button
+                    onClick={() => syncShopify(shopifyConfigs[0])}
+                    disabled={shopifySyncing === shopifyConfigs[0].id}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold disabled:opacity-60 transition-colors"
+                  >
+                    <RefreshCw
+                      className={cn(
+                        "w-4 h-4",
+                        shopifySyncing === shopifyConfigs[0].id && "animate-spin",
+                      )}
+                    />
+                    {shopifySyncing === shopifyConfigs[0].id
+                      ? "Syncing..."
+                      : "Sync Orders Now"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </Section>
+
+          <Section title="Connected Store">
+            {shopifyConfigs.length === 0 ? (
+              <div className="px-1 py-4 text-sm text-slate-500">
+                No Shopify store connected yet.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {shopifyConfigs.map((config) => {
+                  const result =
+                    shopifySyncResult?.id === config.id
+                      ? shopifySyncResult.result
+                      : null;
+                  return (
+                    <div
+                      key={config.id}
+                      className="border border-slate-700/50 rounded-xl p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div
+                            className={cn(
+                              "w-10 h-10 rounded-xl flex items-center justify-center border",
+                              config.active
+                                ? "bg-green-500/10 border-green-500/20"
+                                : "bg-slate-800/60 border-slate-700/60",
+                            )}
+                          >
+                            <Store
+                              className={cn(
+                                "w-4 h-4",
+                                config.active
+                                  ? "text-green-400"
+                                  : "text-slate-500",
+                              )}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-semibold text-white truncate">
+                                {config.storeName}
+                              </h3>
+                              <span
+                                className={cn(
+                                  "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
+                                  config.active
+                                    ? "text-green-400 bg-green-500/10"
+                                    : "text-slate-400 bg-slate-500/10",
+                                )}
+                              >
+                                {config.active ? "Active" : "Inactive"}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                              {config.storeUrl}
+                            </div>
+                            {config.lastSyncAt && (
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                Last sync:{" "}
+                                {new Date(config.lastSyncAt).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => toggleShopify(config)}
+                            className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/60 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+                          >
+                            {config.active ? "Disable" : "Enable"}
+                          </button>
+                          <button
+                            onClick={() => deleteShopify(config.id)}
+                            className="text-slate-600 hover:text-red-400 transition-colors"
+                            aria-label="Delete Shopify connection"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {result && (
+                        <div
+                          className={cn(
+                            "mt-4 px-4 py-3 rounded-xl text-sm flex items-start gap-2 border",
+                            isSyncResult(result)
+                              ? "bg-green-500/10 border-green-500/20 text-green-300"
+                              : "bg-red-500/10 border-red-500/20 text-red-300",
+                          )}
+                        >
+                          {isSyncResult(result) ? (
+                            <>
+                              <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                              Synced {result.total} orders · {result.created}{" "}
+                              created · {result.updated} updated. These orders
+                              now appear in Orders for this client.
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                              {result.message}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+        </div>
       )}
 
       {/* Notifications */}
